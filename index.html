@@ -865,49 +865,119 @@ function updateKaleidoscope(t) {
 }
 
 // ============================================================
-// MODE 4 — FOREST STREAM (v2: water plane, canopy, caustics, glowing spores)
+// MODE 4 — FOREST STREAM (v3: reflections, 3D trees, color grading, mist, ripple rings)
 // ============================================================
 
 function initForest() {
   camera.position.set(0, 1.2, 0);
   camera.rotation.set(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x04130a, 0.016);
-  renderer.setClearColor(0x04130a, 1);
+  scene.fog = new THREE.FogExp2(0x04150b, 0.015);
+  renderer.setClearColor(0x04150b, 1);
 
-  // [2] Dark canopy background sphere
+  // Background sphere
   scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(600, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0x010a04, side: THREE.BackSide })
   ));
 
-  // [1] Water surface — subdivided plane for ripple vertex animation
-  const WATER_W = 28, WATER_D = 120, WATER_SEGS_W = 40, WATER_SEGS_D = 80;
-  const waterGeo = new THREE.PlaneGeometry(WATER_W, WATER_D, WATER_SEGS_W, WATER_SEGS_D);
+  // [3] Ambient color grading overlay — green-teal tint plane facing camera
+  const gradGeo = new THREE.PlaneGeometry(200, 200);
+  const gradMat = new THREE.MeshBasicMaterial({
+    color: 0x062212, transparent: true, opacity: 0.18,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const gradPlane = new THREE.Mesh(gradGeo, gradMat);
+  gradPlane.position.set(0, 0, -5);
+  scene.add(gradPlane);
+
+  // [4] Low-lying ground mist plane — hugs water surface
+  const mistGeo = new THREE.PlaneGeometry(40, 130, 1, 1);
+  mistGeo.rotateX(-Math.PI / 2);
+  const mistMat = new THREE.MeshBasicMaterial({
+    color: 0x8ecfb0, transparent: true, opacity: 0.09,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const mistMesh = new THREE.Mesh(mistGeo, mistMat);
+  mistMesh.position.set(0, -1.6, -60);
+  scene.add(mistMesh);
+
+  // Second thicker mist layer right at waterline
+  const mist2Geo = new THREE.PlaneGeometry(35, 130, 1, 1);
+  mist2Geo.rotateX(-Math.PI / 2);
+  const mist2Mat = new THREE.MeshBasicMaterial({
+    color: 0x5ab898, transparent: true, opacity: 0.06,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const mist2Mesh = new THREE.Mesh(mist2Geo, mist2Mat);
+  mist2Mesh.position.set(0, -2.05, -60);
+  scene.add(mist2Mesh);
+
+  // [1] Water surface — subdivided for ripples
+  const WATER_W = 30, WATER_D = 130, WS_W = 44, WS_D = 88;
+  const waterGeo = new THREE.PlaneGeometry(WATER_W, WATER_D, WS_W, WS_D);
   waterGeo.rotateX(-Math.PI / 2);
-  // Store base y positions for ripple calc
   const waterBase = new Float32Array(waterGeo.attributes.position.array.length);
   waterBase.set(waterGeo.attributes.position.array);
   const waterMat = new THREE.MeshBasicMaterial({
-    color: 0x0a3d2e, transparent: true, opacity: 0.72,
+    color: 0x0d4535, transparent: true, opacity: 0.78,
     side: THREE.DoubleSide, depthWrite: false,
   });
   const waterMesh = new THREE.Mesh(waterGeo, waterMat);
   waterMesh.position.set(0, -2.2, -60);
   scene.add(waterMesh);
 
-  // Water shimmer overlay — additive layer for glint
-  const shimmerGeo = new THREE.PlaneGeometry(WATER_W, WATER_D, WATER_SEGS_W, WATER_SEGS_D);
+  // [1] Reflection layer — flipped additive copy of ambient color, tinted
+  const reflGeo = new THREE.PlaneGeometry(WATER_W, WATER_D, WS_W, WS_D);
+  reflGeo.rotateX(-Math.PI / 2);
+  const reflBase = new Float32Array(reflGeo.attributes.position.array.length);
+  reflBase.set(reflGeo.attributes.position.array);
+  const reflMat = new THREE.MeshBasicMaterial({
+    color: 0x1a6644, transparent: true, opacity: 0.22,
+    side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const reflMesh = new THREE.Mesh(reflGeo, reflMat);
+  reflMesh.position.set(0, -2.18, -60);
+  scene.add(reflMesh);
+
+  // Shimmer glint layer
+  const shimmerGeo = new THREE.PlaneGeometry(WATER_W, WATER_D, WS_W, WS_D);
   shimmerGeo.rotateX(-Math.PI / 2);
   const shimmerMat = new THREE.MeshBasicMaterial({
-    color: 0x1a8866, transparent: true, opacity: 0.18,
+    color: 0x22aa77, transparent: true, opacity: 0.14,
     side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const shimmerMesh = new THREE.Mesh(shimmerGeo, shimmerMat);
-  shimmerMesh.position.set(0, -2.15, -60);
+  shimmerMesh.position.set(0, -2.14, -60);
   scene.add(shimmerMesh);
 
-  // [4] Caustic light blobs on water surface
-  const CAUSTICS = 38;
+  // [5] Ripple ring pool — pre-allocate 12 rings as torus meshes
+  const rippleRings = [];
+  for (let r = 0; r < 12; r++) {
+    const rGeo = new THREE.TorusGeometry(0.1, 0.025, 4, 28);
+    const rMat = new THREE.MeshBasicMaterial({
+      color: 0x55ddaa, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const rMesh = new THREE.Mesh(rGeo, rMat);
+    rMesh.rotation.x = Math.PI / 2;
+    rMesh.position.set(
+      (Math.random() - 0.5) * 22, -2.18,
+      -(5 + Math.random() * 55)
+    );
+    scene.add(rMesh);
+    rippleRings.push({
+      mesh: rMesh,
+      active: false,
+      age: 0,
+      maxAge: 2.2 + Math.random() * 1.2,
+      baseX: (Math.random() - 0.5) * 22,
+      baseZ: -(5 + Math.random() * 55),
+      nextSpawn: Math.random() * 4,
+    });
+  }
+
+  // Caustic light blobs
+  const CAUSTICS = 42;
   const cPos = new Float32Array(CAUSTICS * 3);
   const cCol = new Float32Array(CAUSTICS * 3);
   const cData = [];
@@ -916,37 +986,31 @@ function initForest() {
     const z = -(5 + Math.random() * (WATER_D - 10));
     cPos[i*3] = x; cPos[i*3+1] = -2.1; cPos[i*3+2] = z;
     const bright = 0.65 + Math.random() * 0.35;
-    cCol[i*3] = bright * 0.3; cCol[i*3+1] = bright * 0.9; cCol[i*3+2] = bright * 0.6;
-    cData.push({ baseX: x, baseZ: z, phase: Math.random() * Math.PI * 2, freq: 0.4 + Math.random() * 0.5 });
+    cCol[i*3] = bright * 0.25; cCol[i*3+1] = bright * 0.88; cCol[i*3+2] = bright * 0.55;
+    cData.push({ baseX: x, baseZ: z, phase: Math.random() * Math.PI * 2, freq: 0.35 + Math.random() * 0.5 });
   }
   const cGeo = new THREE.BufferGeometry();
   cGeo.setAttribute('position', new THREE.BufferAttribute(cPos, 3));
   cGeo.setAttribute('color',    new THREE.BufferAttribute(cCol, 3));
   const caustics = new THREE.Points(cGeo, new THREE.PointsMaterial({
-    size: 0.55 + Math.random() * 0.4, vertexColors: true,
-    transparent: true, opacity: 0.0,
+    size: 0.6, vertexColors: true, transparent: true, opacity: 0,
     depthWrite: false, blending: THREE.AdditiveBlending,
   }));
   scene.add(caustics);
 
-  // [2] Canopy layer — dark overlapping ellipses above camera
+  // Canopy leaf planes overhead
   const canopyShapes = [];
-  for (let i = 0; i < 32; i++) {
-    const w   = 3 + Math.random() * 7;
-    const h   = 1.2 + Math.random() * 2.5;
+  for (let i = 0; i < 36; i++) {
+    const w = 3.5 + Math.random() * 7;
+    const h = 1.4 + Math.random() * 3;
     const geo = new THREE.PlaneGeometry(w, h);
     const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(0.33, 0.4, 0.04 + Math.random() * 0.04),
-      transparent: true, opacity: 0.82 + Math.random() * 0.15,
-      side: THREE.DoubleSide,
+      color: new THREE.Color().setHSL(0.33, 0.45, 0.035 + Math.random() * 0.045),
+      transparent: true, opacity: 0.85 + Math.random() * 0.12, side: THREE.DoubleSide,
     });
     const leaf = new THREE.Mesh(geo, mat);
-    leaf.position.set(
-      (Math.random() - 0.5) * 24,
-      5.5 + Math.random() * 5,
-      -(2 + Math.random() * 65)
-    );
-    leaf.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+    leaf.position.set((Math.random() - 0.5) * 26, 5.5 + Math.random() * 6, -(2 + Math.random() * 68));
+    leaf.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
     leaf.rotation.z = Math.random() * Math.PI;
     scene.add(leaf);
     canopyShapes.push({ mesh: leaf, phase: Math.random() * Math.PI * 2 });
@@ -954,28 +1018,65 @@ function initForest() {
 
   // God-ray light shafts
   const shafts = [];
-  for (let s = 0; s < 20; s++) {
-    const h   = 6 + Math.random() * 14;
-    const geo = new THREE.CylinderGeometry(0.06, 0.5, h, 6, 1, true);
+  for (let s = 0; s < 22; s++) {
+    const h = 7 + Math.random() * 15;
+    const geo = new THREE.CylinderGeometry(0.05, 0.55, h, 6, 1, true);
     const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(0.30 + Math.random() * 0.08, 0.55, 0.55 + Math.random() * 0.2),
+      color: new THREE.Color().setHSL(0.30 + Math.random() * 0.08, 0.5, 0.58 + Math.random() * 0.2),
       transparent: true, opacity: 0,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const shaft = new THREE.Mesh(geo, mat);
-    shaft.position.set(
-      (Math.random() - 0.5) * 22,
-      3.5 + Math.random() * 6,
-      -(4 + Math.random() * 60)
-    );
+    shaft.position.set((Math.random() - 0.5) * 24, 4 + Math.random() * 7, -(4 + Math.random() * 62));
     shaft.rotation.x = Math.PI;
-    shaft.rotation.z = (Math.random() - 0.5) * 0.22;
+    shaft.rotation.z = (Math.random() - 0.5) * 0.2;
     scene.add(shaft);
     shafts.push({ mesh: shaft, phase: Math.random() * Math.PI * 2, base: 0.05 + Math.random() * 0.09 });
   }
 
-  // [5] Small fine dust
-  const DUST = 4000;
+  // [2] 3D Tree geometry — tapered cylinder trunks + foliage sphere clusters
+  const trees3D = [];
+  for (let i = 0; i < 28; i++) {
+    const side     = Math.random() < 0.5 ? -1 : 1;
+    const baseX    = side * (4.5 + Math.random() * 13);
+    const baseZ    = -(3 + Math.random() * 68);
+    const trunkH   = 4 + Math.random() * 6;
+    const trunkR   = 0.08 + Math.random() * 0.14;
+    const darkness = 0.022 + Math.random() * 0.025;
+
+    // Trunk
+    const tGeo = new THREE.CylinderGeometry(trunkR * 0.5, trunkR, trunkH, 6);
+    const tMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color().setHSL(0.07, 0.3, darkness),
+    });
+    const trunk = new THREE.Mesh(tGeo, tMat);
+    trunk.position.set(baseX, trunkH / 2 - 2.2, baseZ);
+    scene.add(trunk);
+
+    // Foliage — 2-3 overlapping sphere clusters per tree
+    const foliageGroup = [];
+    const clusterCount = 2 + Math.floor(Math.random() * 2);
+    for (let c = 0; c < clusterCount; c++) {
+      const fR   = 0.7 + Math.random() * 1.1;
+      const fGeo = new THREE.SphereGeometry(fR, 7, 6);
+      const fMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(0.32 + Math.random() * 0.06, 0.4, 0.03 + Math.random() * 0.04),
+        transparent: true, opacity: 0.88 + Math.random() * 0.1,
+      });
+      const foliage = new THREE.Mesh(fGeo, fMat);
+      foliage.position.set(
+        baseX + (Math.random() - 0.5) * fR,
+        trunkH - 2.2 + c * fR * 0.7 + fR * 0.5,
+        baseZ + (Math.random() - 0.5) * fR * 0.6
+      );
+      scene.add(foliage);
+      foliageGroup.push(foliage);
+    }
+    trees3D.push({ trunk, foliage: foliageGroup, baseZ });
+  }
+
+  // Fine dust
+  const DUST = 3800;
   const dPos = new Float32Array(DUST * 3);
   const dCol = new Float32Array(DUST * 3);
   for (let i = 0; i < DUST; i++) {
@@ -983,45 +1084,45 @@ function initForest() {
     dPos[i*3+1] = -1 + Math.random() * 9;
     dPos[i*3+2] = -(Math.random() * 65);
     const b = 0.4 + Math.random() * 0.4;
-    dCol[i*3] = b * 0.55; dCol[i*3+1] = b * 0.85; dCol[i*3+2] = b * 0.35;
+    dCol[i*3] = b * 0.5; dCol[i*3+1] = b * 0.85; dCol[i*3+2] = b * 0.38;
   }
   const dGeo = new THREE.BufferGeometry();
   dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
   dGeo.setAttribute('color',    new THREE.BufferAttribute(dCol, 3));
   const dust = new THREE.Points(dGeo, new THREE.PointsMaterial({
-    size: 0.06, vertexColors: true, transparent: true, opacity: 0.45,
+    size: 0.06, vertexColors: true, transparent: true, opacity: 0.42,
     depthWrite: false, blending: THREE.AdditiveBlending,
   }));
   scene.add(dust);
 
-  // [5] Large glowing spore/pollen particles
-  const SPORES = 280;
+  // Glowing spores
+  const SPORES = 300;
   const sPos = new Float32Array(SPORES * 3);
   const sCol = new Float32Array(SPORES * 3);
   const sData = [];
   for (let i = 0; i < SPORES; i++) {
     const x = (Math.random() - 0.5) * 22;
     const y = -0.5 + Math.random() * 7;
-    const z = -(Math.random() * 60);
+    const z = -(Math.random() * 62);
     sPos[i*3] = x; sPos[i*3+1] = y; sPos[i*3+2] = z;
-    const hue = 0.28 + Math.random() * 0.14; // warm yellow-green
+    const hue = 0.27 + Math.random() * 0.14;
     const c = new THREE.Color().setHSL(hue, 0.9, 0.75);
     sCol[i*3] = c.r; sCol[i*3+1] = c.g; sCol[i*3+2] = c.b;
-    sData.push({ phase: Math.random() * Math.PI * 2, drift: (Math.random() - 0.5) * 0.012 });
+    sData.push({ phase: Math.random() * Math.PI * 2, drift: (Math.random() - 0.5) * 0.011 });
   }
   const sGeo = new THREE.BufferGeometry();
   sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
   sGeo.setAttribute('color',    new THREE.BufferAttribute(sCol, 3));
   const spores = new THREE.Points(sGeo, new THREE.PointsMaterial({
-    size: 0.28, vertexColors: true, transparent: true, opacity: 0.0,
+    size: 0.26, vertexColors: true, transparent: true, opacity: 0,
     depthWrite: false, blending: THREE.AdditiveBlending,
   }));
   scene.add(spores);
 
   // Fireflies
-  const FLIES = 140;
-  const fPos  = new Float32Array(FLIES * 3);
-  const fCol  = new Float32Array(FLIES * 3);
+  const FLIES = 150;
+  const fPos = new Float32Array(FLIES * 3);
+  const fCol = new Float32Array(FLIES * 3);
   for (let i = 0; i < FLIES; i++) {
     fPos[i*3]   = (Math.random() - 0.5) * 22;
     fPos[i*3+1] = -1.5 + Math.random() * 4.5;
@@ -1037,31 +1138,23 @@ function initForest() {
   }));
   scene.add(flies);
 
-  // Tree trunk silhouettes — denser, wider spread
-  for (let i = 0; i < 30; i++) {
-    const h   = 7 + Math.random() * 10;
-    const w   = 0.28 + Math.random() * 0.6;
-    const geo = new THREE.PlaneGeometry(w, h);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(0.35, 0.3, 0.025 + Math.random() * 0.02),
-      side: THREE.DoubleSide, transparent: true, opacity: 0.9,
-    });
-    const tree = new THREE.Mesh(geo, mat);
-    const side = Math.random() < 0.5 ? -1 : 1;
-    tree.position.set(side * (3.5 + Math.random() * 12), h / 2 - 2.2, -(2 + Math.random() * 65));
-    scene.add(tree);
-  }
-
-  md.waterMesh  = waterMesh;
+  md.waterMesh   = waterMesh;  md.waterBase  = waterBase;
+  md.reflMesh    = reflMesh;   md.reflBase   = reflBase;
   md.shimmerMesh = shimmerMesh;
-  md.waterBase  = waterBase;
-  md.caustics   = caustics; md.cPos = cPos; md.cData = cData; md.CAUSTICS = CAUSTICS;
-  md.canopy     = canopyShapes;
-  md.dust       = dust;  md.dPos = dPos; md.DUST  = DUST;
-  md.spores     = spores; md.sPos = sPos; md.sData = sData; md.SPORES = SPORES;
-  md.flies      = flies; md.fPos = fPos; md.FLIES = FLIES;
-  md.shafts     = shafts;
-  md.camZ       = 0;
+  md.mistMesh    = mistMesh;   md.mist2Mesh  = mist2Mesh;
+  md.gradPlane   = gradPlane;
+  md.rippleRings = rippleRings;
+  md.caustics    = caustics;   md.cPos = cPos; md.cData = cData; md.CAUSTICS = CAUSTICS;
+  md.canopy      = canopyShapes;
+  md.trees3D     = trees3D;
+  md.dust        = dust;   md.dPos = dPos; md.DUST  = DUST;
+  md.spores      = spores; md.sPos = sPos; md.sData = sData; md.SPORES = SPORES;
+  md.flies       = flies;  md.fPos = fPos; md.FLIES = FLIES;
+  md.shafts      = shafts;
+  md.camZ        = 0;
+  md.rippleTimer = 0;
+  md.WATER_W     = WATER_W;
+  md.WATER_D     = WATER_D;
 }
 
 function updateForest(t) {
@@ -1074,60 +1167,111 @@ function updateForest(t) {
   camera.position.y += (1.2 - mouseNY * 0.7 - camera.position.y) * 0.018;
   camera.lookAt(camera.position.x * 0.12, 0.2, camera.position.z - 10);
 
+  // [3] Color grading plane follows camera
+  md.gradPlane.position.set(camera.position.x, camera.position.y, camera.position.z - 5);
+  md.gradPlane.lookAt(camera.position.x, camera.position.y, camera.position.z);
+  // Pulse grading tint subtly with light shafts
+  md.gradPlane.material.opacity = 0.14 + Math.sin(t * 0.22) * 0.04;
+
   // [1] Ripple water surface vertices
   const wPos3 = md.waterMesh.geometry.attributes.position.array;
   const wBase = md.waterBase;
+  const rPos3 = md.reflMesh.geometry.attributes.position.array;
+  const rBase = md.reflBase;
   const wCount = wPos3.length / 3;
-  const waterZ = md.waterMesh.position.z;
   for (let i = 0; i < wCount; i++) {
     const bx = wBase[i*3], bz = wBase[i*3+2];
-    const worldZ = bz + waterZ;
-    wPos3[i*3+1] = wBase[i*3+1]
-      + Math.sin(bx * 0.6 + t * 0.9) * 0.055
-      + Math.cos(bz * 0.45 + t * 0.7) * 0.04
-      + Math.sin((bx + bz) * 0.35 + t * 1.1) * 0.025;
+    const ripple = Math.sin(bx * 0.6 + t * 0.9) * 0.055
+                 + Math.cos(bz * 0.45 + t * 0.7) * 0.04
+                 + Math.sin((bx + bz) * 0.35 + t * 1.1) * 0.025;
+    wPos3[i*3+1] = wBase[i*3+1] + ripple;
+    // [1] Reflection layer mirrors ripple slightly offset
+    rPos3[i*3+1] = rBase[i*3+1] + ripple * 0.6 + Math.sin(bx * 0.8 + t * 1.3) * 0.018;
   }
   md.waterMesh.geometry.attributes.position.needsUpdate = true;
+  md.reflMesh.geometry.attributes.position.needsUpdate  = true;
 
-  // Scroll water plane forward, recycle
-  md.waterMesh.position.z  += speed * 1.1;
-  md.shimmerMesh.position.z += speed * 1.1;
-  if (md.waterMesh.position.z > camera.position.z + 8) {
-    md.waterMesh.position.z  = camera.position.z - 110;
-    md.shimmerMesh.position.z = camera.position.z - 110;
+  // [1] Reflection color pulses with shaft light — simulates reflected canopy light
+  const reflPulse = 0.18 + Math.sin(t * 0.38) * 0.07;
+  md.reflMesh.material.opacity = reflPulse;
+  md.shimmerMesh.material.opacity = 0.10 + Math.sin(t * 1.9) * 0.06;
+
+  // Scroll water planes forward
+  [md.waterMesh, md.reflMesh, md.shimmerMesh].forEach(function(m) {
+    m.position.z += speed * 1.1;
+    if (m.position.z > camera.position.z + 8) m.position.z = camera.position.z - 120;
+  });
+
+  // [4] Ground mist planes scroll and pulse opacity
+  md.mistMesh.position.z  += speed * 0.8;
+  md.mist2Mesh.position.z += speed * 0.8;
+  if (md.mistMesh.position.z > camera.position.z + 6) {
+    md.mistMesh.position.z  = camera.position.z - 125;
+    md.mist2Mesh.position.z = camera.position.z - 125;
   }
+  md.mistMesh.material.opacity  = 0.07 + Math.sin(t * 0.19) * 0.025;
+  md.mist2Mesh.material.opacity = 0.05 + Math.sin(t * 0.27 + 1) * 0.02;
 
-  // Shimmer pulse
-  md.shimmerMesh.material.opacity = 0.12 + Math.sin(t * 1.8) * 0.07;
+  // [5] Ripple rings — spawn new rings periodically, animate outward
+  md.rippleTimer += 1 / 30;
+  md.rippleRings.forEach(function(r) {
+    if (!r.active) {
+      r.nextSpawn -= 1 / 30;
+      if (r.nextSpawn <= 0) {
+        // Activate this ring
+        r.active   = true;
+        r.age      = 0;
+        r.baseX    = (Math.random() - 0.5) * 22;
+        r.baseZ    = camera.position.z - (5 + Math.random() * 50);
+        r.mesh.position.set(r.baseX, -2.18, r.baseZ);
+        r.mesh.scale.setScalar(0.1);
+        r.mesh.material.opacity = 0.55;
+        r.nextSpawn = 2.5 + Math.random() * 4;
+      }
+    } else {
+      r.age += 1 / 30;
+      const prog = r.age / r.maxAge;
+      r.mesh.scale.setScalar(0.1 + prog * 2.8);
+      r.mesh.material.opacity = 0.55 * (1 - prog);
+      if (r.age >= r.maxAge) r.active = false;
+    }
+  });
 
-  // [4] Caustic blobs animate on water
-  const causticOpacity = 0.55 + Math.sin(t * 0.7) * 0.35;
-  md.caustics.material.opacity = Math.max(0, causticOpacity);
+  // Caustic blobs
+  md.caustics.material.opacity = Math.max(0, 0.5 + Math.sin(t * 0.7) * 0.32);
   for (let i = 0; i < CAUSTICS; i++) {
     const d = cData[i];
-    cPos[i*3]   = d.baseX + Math.sin(t * d.freq + d.phase) * 0.55
-                           + Math.cos(t * d.freq * 0.7 + d.phase) * 0.3;
-    cPos[i*3+1] = -2.1 + Math.sin(t * 1.2 + d.phase) * 0.04;
+    cPos[i*3]   = d.baseX + Math.sin(t * d.freq + d.phase) * 0.6
+                           + Math.cos(t * d.freq * 0.7 + d.phase) * 0.32;
+    cPos[i*3+1] = -2.1 + Math.sin(t * 1.2 + d.phase) * 0.035;
     cPos[i*3+2] = d.baseZ + camera.position.z + 60;
-    // Recycle caustics with water
-    if (cPos[i*3+2] > camera.position.z + 8) {
-      d.baseZ -= 118;
-    }
+    if (cPos[i*3+2] > camera.position.z + 8) d.baseZ -= 125;
   }
   md.caustics.geometry.attributes.position.needsUpdate = true;
 
-  // [2] Canopy sway subtly
+  // Canopy sway
   md.canopy.forEach(function(c) {
     c.mesh.rotation.z += Math.sin(t * 0.18 + c.phase) * 0.0004;
     c.mesh.position.z += speed * 0.35;
-    if (c.mesh.position.z > camera.position.z + 5) c.mesh.position.z -= 70;
+    if (c.mesh.position.z > camera.position.z + 5) c.mesh.position.z -= 73;
   });
 
-  // Light shafts breathe
+  // [2] 3D trees scroll forward
+  md.trees3D.forEach(function(tree) {
+    tree.trunk.position.z += speed * 0.3;
+    tree.foliage.forEach(function(f) { f.position.z += speed * 0.3; });
+    if (tree.trunk.position.z > camera.position.z + 5) {
+      const shift = 74;
+      tree.trunk.position.z -= shift;
+      tree.foliage.forEach(function(f) { f.position.z -= shift; });
+    }
+  });
+
+  // Light shafts
   shafts.forEach(function(s) {
     s.mesh.material.opacity = s.base * (0.65 + Math.sin(t * 0.25 + s.phase) * 0.35);
     s.mesh.position.z += speed * 0.45;
-    if (s.mesh.position.z > camera.position.z + 6) s.mesh.position.z -= 68;
+    if (s.mesh.position.z > camera.position.z + 6) s.mesh.position.z -= 70;
   });
 
   // Fine dust
@@ -1143,9 +1287,8 @@ function updateForest(t) {
   }
   md.dust.geometry.attributes.position.needsUpdate = true;
 
-  // [5] Glowing spores drift and pulse
-  const sporeOpacity = 0.6 + Math.sin(t * 0.55) * 0.4;
-  md.spores.material.opacity = Math.max(0, sporeOpacity);
+  // Glowing spores
+  md.spores.material.opacity = Math.max(0, 0.6 + Math.sin(t * 0.55) * 0.4);
   for (let i = 0; i < SPORES; i++) {
     const d = sData[i];
     sPos[i*3]   += d.drift + Math.sin(t * 0.3 + d.phase) * 0.005;
@@ -1154,12 +1297,12 @@ function updateForest(t) {
     if (sPos[i*3+2] > camera.position.z + 4) {
       sPos[i*3]   = (Math.random() - 0.5) * 22;
       sPos[i*3+1] = -0.5 + Math.random() * 7;
-      sPos[i*3+2] = camera.position.z - 60;
+      sPos[i*3+2] = camera.position.z - 62;
     }
   }
   md.spores.geometry.attributes.position.needsUpdate = true;
 
-  // Fireflies wander and pulse
+  // Fireflies
   md.flies.material.opacity = Math.max(0, 0.5 + Math.sin(t * 1.3) * 0.5);
   for (let i = 0; i < FLIES; i++) {
     fPos[i*3]   += Math.sin(t * 0.55 + i * 2.1) * 0.007;
