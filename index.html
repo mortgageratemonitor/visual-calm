@@ -621,8 +621,11 @@ function updateBlackHole(t) {
 }
 
 // ============================================================
-// MODE 3 — KALEIDOSCOPE (greatly improved)
+// MODE 3 — KALEIDOSCOPE (v2: mouse reactive, lissajous, color modes, velocity spin)
 // ============================================================
+
+// Kaleidoscope state lives outside md so it persists across frames cleanly
+let kState = {};
 
 function initKaleidoscope() {
   threeCanvas.style.display   = 'none';
@@ -636,27 +639,66 @@ function initKaleidoscope() {
   kOffCtx = kOff.getContext('2d');
   kOffCtx.fillStyle = '#000';
   kOffCtx.fillRect(0, 0, sz, sz);
+
+  // [1][5] Mouse tracking for rotation and velocity
+  kState.mouseX     = 0; // raw -1 to 1
+  kState.mouseY     = 0;
+  kState.prevMouseX = 0;
+  kState.velX       = 0; // velocity
+  kState.spinOffset = 0; // accumulated rotation from mouse X
+  kState.spinMomentum = 0; // [5] velocity-driven spin
+
+  // [2] Segment count — driven by mouse distance from center
+  kState.segs     = 16;
+  kState.targetSegs = 16;
+
+  // [4] Color mode — cycles warm → full → cool → mono over 60s
+  kState.colorPhase = 0;
 }
 
-function drawGeometricSource(t) {
+function drawGeometricSource(t, zoom) {
   if (!kOffCtx) return;
   const sz = kOff.width;
   const cx = sz / 2, cy = sz / 2;
 
-  kOffCtx.fillStyle = 'rgba(0,0,0,0.028)';
+  kOffCtx.fillStyle = 'rgba(0,0,0,0.030)';
   kOffCtx.fillRect(0, 0, sz, sz);
 
-  const hue  = (t * 12) % 360;
+  // [4] Color mode: slow 60s cycle through warm, full-spectrum, cool, monochrome
+  kState.colorPhase = (kState.colorPhase || 0) + 1 / (60 * 30);
+  const cp    = kState.colorPhase % 1; // 0→1 over 60s
+  let hueBase, sat, lightnessScale;
+  if (cp < 0.25) {
+    // Warm phase — oranges, reds, yellows
+    hueBase = 20 + cp * 80; sat = '100%'; lightnessScale = 1;
+  } else if (cp < 0.5) {
+    // Full spectrum
+    hueBase = t * 12; sat = '100%'; lightnessScale = 1;
+  } else if (cp < 0.75) {
+    // Cool phase — blues, cyans, purples
+    hueBase = 180 + (cp - 0.5) * 120; sat = '90%'; lightnessScale = 0.9;
+  } else {
+    // Monochrome — desaturated silver/white
+    hueBase = t * 4; sat = '20%'; lightnessScale = 1.1;
+  }
+  const hue  = hueBase % 360;
   const hue2 = (hue + 137) % 360;
   const hue3 = (hue + 274) % 360;
 
+  // [1] Apply mouse-Y zoom to source canvas
+  const scale = zoom || 1;
+  kOffCtx.save();
+  kOffCtx.translate(cx, cy);
+  kOffCtx.scale(scale, scale);
+  kOffCtx.translate(-cx, -cy);
+
   // Rotating polygon rings
   const polygons = [
-    { sides: 6,  r: sz * (0.28 + Math.sin(t * 0.17) * 0.04), rot:  t * 0.21,  stroke: 'hsla(' + hue  + ',100%,70%,0.65)', lw: sz * 0.006 },
-    { sides: 4,  r: sz * (0.20 + Math.cos(t * 0.23) * 0.03), rot: -t * 0.28,  stroke: 'hsla(' + hue2 + ',90%,65%,0.55)',  lw: sz * 0.005 },
-    { sides: 8,  r: sz * (0.35 + Math.sin(t * 0.13) * 0.05), rot:  t * 0.14,  stroke: 'hsla(' + hue3 + ',95%,60%,0.45)',  lw: sz * 0.004 },
-    { sides: 3,  r: sz * (0.14 + Math.cos(t * 0.31) * 0.02), rot:  t * 0.38,  stroke: 'hsla(' + hue  + ',80%,80%,0.50)',  lw: sz * 0.004 },
-    { sides: 12, r: sz * (0.42 + Math.sin(t * 0.09) * 0.06), rot: -t * 0.11,  stroke: 'hsla(' + hue2 + ',85%,55%,0.35)',  lw: sz * 0.003 },
+    { sides: 6,  r: sz * (0.28 + Math.sin(t * 0.17) * 0.04), rot:  t * 0.21,  stroke: 'hsla(' + hue  + ',' + sat + ',' + (70 * lightnessScale) + '%,0.65)', lw: sz * 0.006 },
+    { sides: 4,  r: sz * (0.20 + Math.cos(t * 0.23) * 0.03), rot: -t * 0.28,  stroke: 'hsla(' + hue2 + ',' + sat + ',' + (65 * lightnessScale) + '%,0.55)', lw: sz * 0.005 },
+    { sides: 8,  r: sz * (0.35 + Math.sin(t * 0.13) * 0.05), rot:  t * 0.14,  stroke: 'hsla(' + hue3 + ',' + sat + ',' + (60 * lightnessScale) + '%,0.45)', lw: sz * 0.004 },
+    { sides: 3,  r: sz * (0.14 + Math.cos(t * 0.31) * 0.02), rot:  t * 0.38,  stroke: 'hsla(' + hue  + ',' + sat + ',' + (80 * lightnessScale) + '%,0.50)', lw: sz * 0.004 },
+    { sides: 12, r: sz * (0.42 + Math.sin(t * 0.09) * 0.06), rot: -t * 0.11,  stroke: 'hsla(' + hue2 + ',' + sat + ',' + (55 * lightnessScale) + '%,0.35)', lw: sz * 0.003 },
   ];
 
   polygons.forEach(function(p) {
@@ -675,6 +717,31 @@ function drawGeometricSource(t) {
     kOffCtx.restore();
   });
 
+  // [3] Lissajous / spirograph curves — never quite repeat
+  const lissajous = [
+    { A: sz*0.32, B: sz*0.28, a: 3, b: 2, delta: t * 0.18,        hue: hue,  alpha: 0.38 },
+    { A: sz*0.22, B: sz*0.24, a: 5, b: 4, delta: t * 0.11 + 1.0,  hue: hue2, alpha: 0.30 },
+    { A: sz*0.38, B: sz*0.20, a: 7, b: 6, delta: t * 0.07 + 2.1,  hue: hue3, alpha: 0.22 },
+    { A: sz*0.18, B: sz*0.36, a: 4, b: 3, delta: t * 0.14 + 0.5,  hue: hue,  alpha: 0.28 },
+  ];
+
+  lissajous.forEach(function(lj) {
+    kOffCtx.save();
+    kOffCtx.translate(cx, cy);
+    kOffCtx.beginPath();
+    const steps = 220;
+    for (let s = 0; s <= steps; s++) {
+      const theta = (s / steps) * Math.PI * 2;
+      const lx = lj.A * Math.sin(lj.a * theta + lj.delta);
+      const ly = lj.B * Math.sin(lj.b * theta);
+      s === 0 ? kOffCtx.moveTo(lx, ly) : kOffCtx.lineTo(lx, ly);
+    }
+    kOffCtx.strokeStyle = 'hsla(' + lj.hue + ',' + sat + ',72%,' + lj.alpha + ')';
+    kOffCtx.lineWidth   = sz * 0.0035;
+    kOffCtx.stroke();
+    kOffCtx.restore();
+  });
+
   // Orbiting mandala dots
   const orbits = [
     { count: 8,  orbitR: sz * 0.22, dotR: sz * 0.016, speed:  0.29, h: hue,  alpha: 0.75 },
@@ -689,9 +756,9 @@ function drawGeometricSource(t) {
       const dx  = cx + Math.cos(ang) * o.orbitR;
       const dy  = cy + Math.sin(ang) * o.orbitR;
       const g   = kOffCtx.createRadialGradient(dx, dy, 0, dx, dy, o.dotR);
-      g.addColorStop(0,   'hsla(' + o.h + ',100%,90%,' + o.alpha + ')');
-      g.addColorStop(0.5, 'hsla(' + ((o.h+40)%360) + ',90%,65%,' + (o.alpha * 0.5) + ')');
-      g.addColorStop(1,   'hsla(' + o.h + ',80%,50%,0)');
+      g.addColorStop(0,   'hsla(' + o.h + ',' + sat + ',90%,' + o.alpha + ')');
+      g.addColorStop(0.5, 'hsla(' + ((o.h+40)%360) + ',' + sat + ',65%,' + (o.alpha * 0.5) + ')');
+      g.addColorStop(1,   'hsla(' + o.h + ',' + sat + ',50%,0)');
       kOffCtx.beginPath();
       kOffCtx.arc(dx, dy, o.dotR, 0, Math.PI * 2);
       kOffCtx.fillStyle = g;
@@ -708,9 +775,9 @@ function drawGeometricSource(t) {
     kOffCtx.translate(cx, cy);
     kOffCtx.rotate(a);
     const lg = kOffCtx.createLinearGradient(0, 0, len, 0);
-    lg.addColorStop(0,   'hsla(' + lh + ',100%,85%,0.55)');
-    lg.addColorStop(0.6, 'hsla(' + lh + ',90%,60%,0.22)');
-    lg.addColorStop(1,   'hsla(' + lh + ',80%,50%,0)');
+    lg.addColorStop(0,   'hsla(' + lh + ',' + sat + ',85%,0.55)');
+    lg.addColorStop(0.6, 'hsla(' + lh + ',' + sat + ',60%,0.22)');
+    lg.addColorStop(1,   'hsla(' + lh + ',' + sat + ',50%,0)');
     kOffCtx.beginPath();
     kOffCtx.moveTo(0, 0);
     kOffCtx.lineTo(len, 0);
@@ -723,13 +790,15 @@ function drawGeometricSource(t) {
   // Pulsing center bloom
   const bloomR = sz * (0.07 + Math.sin(t * 0.55) * 0.025);
   const bloom  = kOffCtx.createRadialGradient(cx, cy, 0, cx, cy, bloomR);
-  bloom.addColorStop(0,   'hsla(' + hue  + ',100%,98%,0.9)');
-  bloom.addColorStop(0.4, 'hsla(' + hue2 + ',100%,70%,0.5)');
-  bloom.addColorStop(1,   'hsla(' + hue3 + ',90%,50%,0)');
+  bloom.addColorStop(0,   'hsla(' + hue  + ',' + sat + ',98%,0.9)');
+  bloom.addColorStop(0.4, 'hsla(' + hue2 + ',' + sat + ',70%,0.5)');
+  bloom.addColorStop(1,   'hsla(' + hue3 + ',' + sat + ',50%,0)');
   kOffCtx.beginPath();
   kOffCtx.arc(cx, cy, bloomR, 0, Math.PI * 2);
   kOffCtx.fillStyle = bloom;
   kOffCtx.fill();
+
+  kOffCtx.restore(); // end zoom transform
 }
 
 function updateKaleidoscope(t) {
@@ -737,10 +806,26 @@ function updateKaleidoscope(t) {
   const W  = kaleidoCanvas.width, H = kaleidoCanvas.height;
   const cx = W / 2, cy = H / 2;
   const R  = Math.min(cx, cy) * 0.985;
-  const SEGS = 16;
+
+  // [5] Mouse velocity drives spin momentum
+  kState.velX       = mouseNX - kState.prevMouseX;
+  kState.prevMouseX = mouseNX;
+  kState.spinMomentum += kState.velX * 0.18;
+  kState.spinMomentum *= 0.92; // friction — momentum decays naturally
+  kState.spinOffset   += kState.spinMomentum;
+
+  // [1] Mouse X = rotation offset, Mouse Y = zoom (0.7 → 1.4)
+  const mouseRotation = kState.spinOffset;
+  const zoom = 0.7 + (1 - mouseNY) * 0.5 * 0.7; // mouseNY -1→1 maps to 1.4→0.7
+
+  // [2] Segment count from mouse distance to center (clamped to even numbers 8→32)
+  const mouseDist  = Math.sqrt(mouseNX * mouseNX + mouseNY * mouseNY) / Math.SQRT2;
+  const targetSegs = Math.round((8 + mouseDist * 24) / 2) * 2; // even only
+  kState.segs += (targetSegs - kState.segs) * 0.06; // smooth interpolation
+  const SEGS  = Math.max(8, Math.min(32, Math.round(kState.segs / 2) * 2));
   const sAng  = (Math.PI * 2) / SEGS;
 
-  drawGeometricSource(t);
+  drawGeometricSource(t, zoom);
 
   const ctx = kaleidoCtx;
   ctx.fillStyle = '#000';
@@ -749,9 +834,12 @@ function updateKaleidoscope(t) {
   ctx.save();
   ctx.translate(cx, cy);
 
+  // [1] Apply mouse-X rotation to entire kaleidoscope
+  ctx.rotate(mouseRotation + t * 0.008);
+
   for (let i = 0; i < SEGS; i++) {
     ctx.save();
-    ctx.rotate(sAng * i + t * 0.012);
+    ctx.rotate(sAng * i);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, R, -sAng / 2, sAng / 2);
