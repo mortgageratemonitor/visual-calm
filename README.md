@@ -27,7 +27,15 @@ A fully interactive geometric mandala. The source pattern layers rotating polygo
 **Color mode** cycles automatically every 60 seconds: warm (oranges/reds) → full spectrum → cool (blues/cyans/purples) → monochrome (silver/white) → back to warm.
 
 ### Forest Stream
-You drift slowly above a forest stream. A subdivided water mesh animates with layered sine-wave ripples and a pulsing shimmer layer on top. Caustic light blobs dance on the water surface, simulating the patterns sunlight makes through moving water. Glowing pollen and spores drift lazily upward through god-ray light shafts that breathe through a dark overhead canopy of swaying leaves. Fireflies pulse in and out. Mouse gently sways your view side to side.
+You drift slowly above a forest stream at golden hour. The scene is built from several layered systems that combine to create a realistic forest environment.
+
+**Water** — a subdivided mesh ripples with layered sine-wave displacement. A reflection layer sits just above it, pulsing in sync with the overhead light shafts to simulate canopy light bouncing off the stream. A shimmer glint layer adds surface sparkle. Expanding ripple rings spawn randomly across the water — like raindrops or fish breaking the surface — growing outward and fading over 2–4 seconds.
+
+**Forest** — 28 three-dimensional trees line the stream, each with a tapered cylinder trunk and 2–3 overlapping foliage sphere clusters. Trees have genuine depth as you pass between them.
+
+**Atmosphere** — two layers of ground mist hug the water surface at different heights, both breathing independently. A green-teal color grading plane follows the camera, tinting the whole scene with a humid forest atmosphere. Caustic light blobs dance across the water surface. God-ray light shafts pulse down through a canopy of 36 swaying leaf planes overhead.
+
+**Particles** — fine dust drifts through the air, glowing pollen and spores float lazily upward, and fireflies pulse in and out near the waterline. Mouse gently sways your view side to side.
 
 ---
 
