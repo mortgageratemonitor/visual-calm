@@ -1556,149 +1556,269 @@ function updateOcean(t) {
 // ============================================================
 
 function initAurora() {
-  camera.position.set(0, 2, 0);
+  camera.position.set(0, 3, 0);
   camera.rotation.set(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x000510, 0.008);
-  renderer.setClearColor(0x000510, 1);
+  scene.fog = new THREE.FogExp2(0x000410, 0.006);
+  renderer.setClearColor(0x000410, 1);
 
-  // Star field
-  const STARS = 5000;
+  // Star field — upper hemisphere only
+  const STARS = 6000;
   const sPos = new Float32Array(STARS * 3);
   for (let i = 0; i < STARS; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi   = Math.acos(2 * Math.random() - 1);
-    const r     = 300 + Math.random() * 150;
+    const r     = 320 + Math.random() * 120;
     sPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    sPos[i*3+1] = Math.abs(r * Math.sin(phi) * Math.sin(theta)); // upper hemisphere
+    sPos[i*3+1] = Math.abs(r * Math.sin(phi) * Math.sin(theta)) + 10;
     sPos[i*3+2] = r * Math.cos(phi);
   }
   const sGeo = new THREE.BufferGeometry();
   sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
   scene.add(new THREE.Points(sGeo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.55, transparent: true, opacity: 0.7,
+    color: 0xffffff, size: 0.5, transparent: true, opacity: 0.72,
   })));
 
-  // Tundra silhouette — dark ground plane
-  const groundGeo = new THREE.PlaneGeometry(500, 500);
+  // [4] Tundra ground — flat base + rolling hill silhouettes
+  const groundGeo = new THREE.PlaneGeometry(600, 600);
   groundGeo.rotateX(-Math.PI / 2);
-  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x000308 })));
+  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x00020a })));
 
-  // Aurora curtains — tall skinny planes with vertex colors
-  const curtains = [];
-  const curtainHues = [0.38, 0.48, 0.75, 0.55, 0.42]; // green, cyan, violet, teal, green
-
-  for (let c = 0; c < 18; c++) {
-    const W = 12 + Math.random() * 20;
-    const H = 18 + Math.random() * 28;
-    const segsW = 12, segsH = 24;
-    const geo = new THREE.PlaneGeometry(W, H, segsW, segsH);
-    geo.rotateX(Math.PI / 2);
-
-    // Per-vertex alpha — bright at top, fade to zero at bottom
-    const posArr = geo.attributes.position.array;
-    const vCount = posArr.length / 3;
-    const colors = new Float32Array(vCount * 3);
-    const hue = curtainHues[c % curtainHues.length] + (Math.random() - 0.5) * 0.08;
-    for (let v = 0; v < vCount; v++) {
-      const y   = posArr[v*3+2]; // z is up after rotate
-      const pct = (y + H / 2) / H; // 0 at bottom, 1 at top
-      const col = new THREE.Color().setHSL(hue, 1.0, 0.55 + pct * 0.3);
-      colors[v*3] = col.r * pct; colors[v*3+1] = col.g * pct; colors[v*3+2] = col.b * pct;
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const mat = new THREE.MeshBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0.0,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-    });
-    const curtain = new THREE.Mesh(geo, mat);
-    curtain.position.set(
-      (Math.random() - 0.5) * 120,
-      H / 2 + 5,
-      -(20 + Math.random() * 180)
+  // Hill silhouettes — dark curved shapes on horizon
+  const hills = [];
+  for (let h = 0; h < 10; h++) {
+    const hillW = 60 + Math.random() * 80;
+    const hillH = 3 + Math.random() * 5;
+    const geo = new THREE.SphereGeometry(hillW * 0.5, 18, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00010a });
+    const hill = new THREE.Mesh(geo, mat);
+    hill.scale.set(1, hillH / (hillW * 0.5), 0.25);
+    hill.position.set(
+      (Math.random() - 0.5) * 250,
+      -hillH * 0.5 + 0.5,
+      -(80 + Math.random() * 200)
     );
-    curtain.rotation.y = (Math.random() - 0.5) * 0.4;
-    scene.add(curtain);
-    curtains.push({
-      mesh: curtain, phase: Math.random() * Math.PI * 2,
-      hue, H, segsW, segsH, W,
-      waveSpeed: 0.18 + Math.random() * 0.22,
-      baseOpacity: 0.35 + Math.random() * 0.45,
-    });
+    scene.add(hill);
+    hills.push(hill);
   }
 
-  // Shimmer particles — drifting light motes
-  const MOTES = 1200;
+  // [4] Snow shimmer — faint additive layer on ground reflecting aurora
+  const snowGeo = new THREE.PlaneGeometry(500, 500, 1, 1);
+  snowGeo.rotateX(-Math.PI / 2);
+  const snowMat = new THREE.MeshBasicMaterial({
+    color: 0x003322, transparent: true, opacity: 0.0,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const snowMesh = new THREE.Mesh(snowGeo, snowMat);
+  snowMesh.position.y = 0.05;
+  scene.add(snowMesh);
+
+  // [1] Curtains in 3 depth layers: far (diffuse), mid, near (sharp)
+  // [5] Color event timer — global phase drives hue cycle
+  const curtains = [];
+  const layers = [
+    { count: 8, zRange: [180, 350], wScale: 1.8, hScale: 1.4, baseOp: 0.18, waveAmp: 1.2 }, // far — wide, diffuse
+    { count: 8, zRange: [60,  180], wScale: 1.2, hScale: 1.1, baseOp: 0.38, waveAmp: 2.0 }, // mid
+    { count: 6, zRange: [18,   60], wScale: 0.8, hScale: 0.9, baseOp: 0.55, waveAmp: 2.8 }, // near — sharp, bright
+  ];
+
+  layers.forEach(function(layer, li) {
+    for (let c = 0; c < layer.count; c++) {
+      const W = (14 + Math.random() * 22) * layer.wScale;
+      const H = (20 + Math.random() * 30) * layer.hScale;
+      const segsW = 14, segsH = 28;
+      const geo = new THREE.PlaneGeometry(W, H, segsW, segsH);
+      geo.rotateX(Math.PI / 2);
+
+      const posArr = geo.attributes.position.array;
+      const vCount = posArr.length / 3;
+      const colors = new Float32Array(vCount * 3);
+      // Seed hue — will be overridden each frame by color event system
+      const hue = 0.38 + Math.random() * 0.06;
+      for (let v = 0; v < vCount; v++) {
+        const pct = (posArr[v*3+2] + H / 2) / H;
+        const col = new THREE.Color().setHSL(hue, 1.0, 0.55 + pct * 0.3);
+        colors[v*3] = col.r * pct; colors[v*3+1] = col.g * pct; colors[v*3+2] = col.b * pct;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0,
+        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      const zMin = layer.zRange[0], zMax = layer.zRange[1];
+      mesh.position.set(
+        (Math.random() - 0.5) * 140,
+        H / 2 + 4,
+        -(zMin + Math.random() * (zMax - zMin))
+      );
+      mesh.rotation.y = (Math.random() - 0.5) * 0.5;
+      scene.add(mesh);
+
+      // [2] Inner glow — a wider, softer plane behind each curtain
+      const glowGeo = new THREE.PlaneGeometry(W * 1.6, H * 0.7, 2, 2);
+      glowGeo.rotateX(Math.PI / 2);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(hue, 1.0, 0.5),
+        transparent: true, opacity: 0,
+        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+      });
+      const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+      glowMesh.position.copy(mesh.position);
+      glowMesh.position.z += 1.5; // slightly behind curtain
+      glowMesh.rotation.y = mesh.rotation.y;
+      scene.add(glowMesh);
+
+      // [3] Vertical ray streaks — line segments shooting upward inside curtain
+      const RAY_COUNT = 18;
+      const rayPos = new Float32Array(RAY_COUNT * 2 * 3);
+      for (let r = 0; r < RAY_COUNT; r++) {
+        const rx = (Math.random() - 0.5) * W * 0.9;
+        const ry = (Math.random() - 0.5) * H * 0.5;
+        const rayH = H * (0.3 + Math.random() * 0.5);
+        rayPos[r*6]   = rx; rayPos[r*6+1] = ry;         rayPos[r*6+2] = 0;
+        rayPos[r*6+3] = rx; rayPos[r*6+4] = ry + rayH;  rayPos[r*6+5] = 0;
+      }
+      const rayGeo = new THREE.BufferGeometry();
+      rayGeo.setAttribute('position', new THREE.BufferAttribute(rayPos, 3));
+      const rayMat = new THREE.LineBasicMaterial({
+        color: new THREE.Color().setHSL(hue, 1.0, 0.8),
+        transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending,
+      });
+      const rays = new THREE.LineSegments(rayGeo, rayMat);
+      rays.rotation.copy(mesh.rotation);
+      rays.position.copy(mesh.position);
+      scene.add(rays);
+
+      curtains.push({
+        mesh, glowMesh, rays,
+        phase: Math.random() * Math.PI * 2,
+        hue, H, W, segsW, segsH,
+        waveSpeed: 0.14 + Math.random() * 0.18,
+        baseOp: layer.baseOp * (0.7 + Math.random() * 0.6),
+        waveAmp: layer.waveAmp,
+        layer: li,
+        zBase: mesh.position.z,
+      });
+    }
+  });
+
+  // Shimmer motes
+  const MOTES = 1600;
   const mPos = new Float32Array(MOTES * 3);
   const mCol = new Float32Array(MOTES * 3);
   for (let i = 0; i < MOTES; i++) {
-    mPos[i*3]   = (Math.random() - 0.5) * 100;
-    mPos[i*3+1] = 4 + Math.random() * 35;
-    mPos[i*3+2] = -(Math.random() * 200);
-    const hue = 0.38 + Math.random() * 0.38;
-    const c = new THREE.Color().setHSL(hue, 1, 0.7);
-    mCol[i*3] = c.r; mCol[i*3+1] = c.g; mCol[i*3+2] = c.b;
+    mPos[i*3]   = (Math.random() - 0.5) * 120;
+    mPos[i*3+1] = 3 + Math.random() * 40;
+    mPos[i*3+2] = -(Math.random() * 350);
+    const hue = 0.35 + Math.random() * 0.45;
+    const col = new THREE.Color().setHSL(hue, 1, 0.72);
+    mCol[i*3] = col.r; mCol[i*3+1] = col.g; mCol[i*3+2] = col.b;
   }
   const mGeo = new THREE.BufferGeometry();
   mGeo.setAttribute('position', new THREE.BufferAttribute(mPos, 3));
   mGeo.setAttribute('color',    new THREE.BufferAttribute(mCol, 3));
   const motes = new THREE.Points(mGeo, new THREE.PointsMaterial({
-    size: 0.22, vertexColors: true, transparent: true, opacity: 0.5,
+    size: 0.2, vertexColors: true, transparent: true, opacity: 0.45,
     depthWrite: false, blending: THREE.AdditiveBlending,
   }));
   scene.add(motes);
 
-  md.curtains = curtains;
-  md.motes    = motes; md.mPos = mPos; md.MOTES = MOTES;
-  md.camZ     = 0;
+  md.curtains  = curtains;
+  md.snowMesh  = snowMesh;
+  md.hills     = hills;
+  md.motes     = motes; md.mPos = mPos; md.MOTES = MOTES;
+  md.camZ      = 0;
+  // [5] Color event state — 45s cycle: green→cyan→violet→pink
+  md.colorCycle = 0;
 }
 
 function updateAurora(t) {
   const { mPos, MOTES } = md;
-  const speed = 0.018;
+  const speed = 0.016;
 
   md.camZ -= speed;
   camera.position.z = md.camZ;
-  camera.position.x += (mouseNX * 3 - camera.position.x) * 0.012;
-  camera.position.y += (2 - mouseNY * 1.5 - camera.position.y) * 0.012;
-  camera.lookAt(camera.position.x * 0.08, 8, camera.position.z - 15);
+  camera.position.x += (mouseNX * 3.5 - camera.position.x) * 0.01;
+  camera.position.y += (3 - mouseNY * 2 - camera.position.y) * 0.01;
+  camera.lookAt(camera.position.x * 0.06, 9, camera.position.z - 18);
 
-  // Curtains wave and breathe
+  // [5] Global color event — 45s cycle drives all curtain hues
+  md.colorCycle += 1 / (45 * 30); // full cycle = 45s
+  const cp = md.colorCycle % 1;
+  // Four phases: 0-0.25 green, 0.25-0.5 cyan, 0.5-0.75 violet, 0.75-1.0 pink→green
+  let globalHue;
+  if (cp < 0.25)      globalHue = 0.38 + (cp / 0.25) * 0.1;        // green → cyan
+  else if (cp < 0.5)  globalHue = 0.48 + ((cp-0.25)/0.25) * 0.22;  // cyan → violet
+  else if (cp < 0.75) globalHue = 0.70 + ((cp-0.5)/0.25) * 0.22;   // violet → pink
+  else                globalHue = 0.92 + ((cp-0.75)/0.25) * (-0.54); // pink → green
+
+  // [4] Snow shimmer reflects current aurora color
+  md.snowMesh.material.color.setHSL(globalHue, 0.9, 0.35);
+  md.snowMesh.material.opacity = 0.04 + Math.sin(t * 0.18) * 0.025;
+
+  // Curtains
   md.curtains.forEach(function(c) {
-    // Opacity pulse — curtains fade in and out slowly
-    c.mesh.material.opacity = c.baseOpacity * (0.6 + Math.sin(t * 0.22 + c.phase) * 0.4);
+    // [5] Per-curtain hue blends toward global color event with individual offset
+    const curtainHue = (globalHue + c.phase * 0.08 + 1) % 1;
 
-    // Wave vertex positions — ripple effect along curtain width
-    const pos = c.mesh.geometry.attributes.position.array;
+    // Opacity pulse — near curtains brighter, far ones dreamier
+    const opMult = 0.55 + Math.sin(t * 0.18 + c.phase) * 0.45;
+    c.mesh.material.opacity = c.baseOp * opMult;
+
+    // [2] Inner glow pulses slightly out of phase with curtain
+    c.glowMesh.material.color.setHSL(curtainHue, 1.0, 0.45);
+    c.glowMesh.material.opacity = c.baseOp * 0.35 * (0.5 + Math.sin(t * 0.22 + c.phase + 0.8) * 0.5);
+
+    // [3] Rays pulse and shift color
+    c.rays.material.color.setHSL((curtainHue + 0.05) % 1, 1.0, 0.85);
+    c.rays.material.opacity = c.baseOp * 0.6 * (0.4 + Math.sin(t * 0.35 + c.phase * 1.3) * 0.6);
+
+    // Wave curtain vertices + recolor
+    const pos  = c.mesh.geometry.attributes.position.array;
     const cols = c.mesh.geometry.attributes.color.array;
     const vCount = pos.length / 3;
     for (let v = 0; v < vCount; v++) {
       const origX = ((v % (c.segsW + 1)) / c.segsW - 0.5) * c.W;
-      const pct   = (pos[v*3+2] + c.H / 2) / c.H;
-      // Horizontal ripple — more at top, less at bottom
-      pos[v*3] = origX + Math.sin(t * c.waveSpeed + origX * 0.15 + c.phase) * pct * 2.2
-                       + Math.sin(t * c.waveSpeed * 0.6 + origX * 0.08 + c.phase * 1.4) * pct * 1.2;
-      // Color shimmer — hue shifts slightly over time
-      const shiftHue = (c.hue + Math.sin(t * 0.12 + c.phase) * 0.06 + (origX / c.W) * 0.1 + 1) % 1;
-      const col = new THREE.Color().setHSL(shiftHue, 1.0, 0.55 + pct * 0.3);
+      const pct   = Math.max(0, Math.min(1, (pos[v*3+2] + c.H / 2) / c.H));
+
+      // [1] Wave amplitude varies by layer — near curtains ripple more
+      pos[v*3] = origX
+        + Math.sin(t * c.waveSpeed + origX * 0.14 + c.phase) * pct * c.waveAmp
+        + Math.sin(t * c.waveSpeed * 0.55 + origX * 0.07 + c.phase * 1.3) * pct * c.waveAmp * 0.55;
+
+      // [5] Color: bottom = current global hue, top shifts +0.12 (pink tips on green)
+      const topHue = (curtainHue + 0.12 * pct) % 1;
+      const lum    = 0.52 + pct * 0.32;
+      const col    = new THREE.Color().setHSL(topHue, 1.0, lum);
       cols[v*3] = col.r * pct; cols[v*3+1] = col.g * pct; cols[v*3+2] = col.b * pct;
     }
     c.mesh.geometry.attributes.position.needsUpdate = true;
     c.mesh.geometry.attributes.color.needsUpdate    = true;
 
-    c.mesh.position.z += speed * 0.3;
-    if (c.mesh.position.z > camera.position.z + 10) c.mesh.position.z -= 205;
+    // Scroll curtains forward — near layers scroll faster (parallax)
+    const scrollSpeed = speed * (0.2 + c.layer * 0.12);
+    c.mesh.position.z     += scrollSpeed;
+    c.glowMesh.position.z += scrollSpeed;
+    c.rays.position.z     += scrollSpeed;
+    const wrap = 210 + c.layer * 145;
+    if (c.mesh.position.z > camera.position.z + 12) {
+      c.mesh.position.z     -= wrap;
+      c.glowMesh.position.z -= wrap;
+      c.rays.position.z     -= wrap;
+    }
   });
 
   // Shimmer motes drift
   for (let i = 0; i < MOTES; i++) {
-    mPos[i*3]   += Math.sin(t * 0.3 + i * 0.8) * 0.005;
-    mPos[i*3+1] += Math.cos(t * 0.22 + i * 0.6) * 0.003;
-    mPos[i*3+2] += speed * 0.5;
-    if (mPos[i*3+2] > camera.position.z + 8) {
-      mPos[i*3]   = (Math.random() - 0.5) * 100;
-      mPos[i*3+1] = 4 + Math.random() * 35;
-      mPos[i*3+2] = camera.position.z - 200;
+    mPos[i*3]   += Math.sin(t * 0.28 + i * 0.9) * 0.006;
+    mPos[i*3+1] += Math.cos(t * 0.2  + i * 0.6) * 0.003;
+    mPos[i*3+2] += speed * 0.55;
+    if (mPos[i*3+2] > camera.position.z + 10) {
+      mPos[i*3]   = (Math.random() - 0.5) * 120;
+      mPos[i*3+1] = 3 + Math.random() * 40;
+      mPos[i*3+2] = camera.position.z - 350;
     }
   }
   md.motes.geometry.attributes.position.needsUpdate = true;
