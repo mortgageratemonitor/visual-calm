@@ -1,6 +1,6 @@
 # Cosmic Calm
 
-A browser-based generative visual experience designed for relaxation and focus. Four immersive modes run entirely in your browser with no backend, no login, and no time limit — safe to leave running for hours.
+A browser-based generative visual experience designed for relaxation and focus. Seven immersive modes run entirely in your browser with no backend, no login, and no time limit — safe to leave running for hours.
 
 ---
 
@@ -20,7 +20,7 @@ Background stars bend and warp toward the singularity, simulating gravitational 
 A fully interactive geometric mandala. The source pattern layers rotating polygon rings (triangle, square, hexagon, octagon, dodecagon), four rings of orbiting dot clusters, spirograph-style Lissajous curves with irrational frequency ratios that never quite repeat, and radiating laser lines from a pulsing center bloom.
 
 **Mouse controls:**
-- **Move left/right** — spins the entire kaleidoscope. Fast movements carry momentum that decays naturally, like spinning a physical object
+- **Move left/right** — spins the entire kaleidoscope with natural momentum decay, like spinning a physical object
 - **Move up/down** — zooms the source pattern in and out
 - **Distance from center** — the further your cursor is from the center of the screen, the more mirror segments appear (8 → 32), multiplying the reflections in real time
 
@@ -37,13 +37,28 @@ You drift slowly above a forest stream at golden hour. The scene is built from s
 
 **Particles** — fine dust drifts through the air, glowing pollen and spores float lazily upward, and fireflies pulse in and out near the waterline. Mouse gently sways your view side to side.
 
+### Deep Ocean
+You drift through a bioluminescent deep sea environment. Blue-green light shafts pierce down from the surface above, casting caustic light patterns across the water below. 1,800 bioluminescent particles pulse in blue, cyan, and teal, drifting slowly through the dark water. 600 bubbles rise steadily upward. 14 jellyfish — built from glowing torus bells and trailing tentacle line segments — pulse and drift in gentle arcs. Mouse shifts your view through the water column.
+
+### Aurora
+You drift slowly across a frozen tundra beneath an active aurora borealis. The sky is built from three depth layers of curtains — far (wide, diffuse), mid, and near (sharp, bright) — each scrolling at a different speed to create genuine parallax depth.
+
+Every curtain has an inner glow plane pulsing behind it, making the aurora appear to radiate light from within. Fine vertical ray streaks shoot upward inside each curtain, like the comb-like rays visible in real aurora photography.
+
+The horizon features rolling tundra hill silhouettes and a snow shimmer plane that reflects the current aurora color. A 45-second color cycle shifts the entire sky through four phases: green → cyan → violet → pink → back to green. The tops of each curtain shift hue slightly ahead of the base, creating a live bottom-to-top color gradient at all times. Drifting light motes float through the sky. Mouse tilts your view across the landscape.
+
+### Sacred Geometry
+A meditative 3D geometry experience. Five nested Platonic solids — icosahedron, dodecahedron, octahedron, tetrahedron, and a second icosahedron — rotate on independent axes at different speeds, each with a wireframe shell and a faint translucent face fill. Their colors slowly breathe through the hue spectrum.
+
+Three rings of connecting line segments link vertices between the shells, rotating at different rates. 280 node particles orbit spherically around the structure. A pulsing white bloom at the center expands and contracts rhythmically. The camera orbits slowly and drifts up and down on a gentle sine wave, with mouse movement nudging your viewing angle.
+
 ---
 
 ## Controls
 
 | Input | Effect |
 |-------|--------|
-| **Mode buttons** | Bottom center pill — switches between the four scenes |
+| **Mode buttons** | Bottom center pill — switches between the seven scenes |
 | **Pulse toggle** | Bottom right — Warp mode only, enables/disables speed surges |
 | **Mouse move** | Subtly influences every scene; see Kaleidoscope for full interactivity |
 
