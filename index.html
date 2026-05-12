@@ -10,7 +10,6 @@
   body { background: #000; overflow: hidden; width: 100vw; height: 100vh; cursor: none; }
 
   #three-canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
-  #kaleido-canvas { position: fixed; inset: 0; display: none; }
 
   #vignette {
     position: fixed; inset: 0;
@@ -79,16 +78,14 @@
 <div id="scene-label">Warp</div>
 
 <canvas id="three-canvas"></canvas>
-<canvas id="kaleido-canvas"></canvas>
 
 <div id="ui">
   <button class="mode-btn active" data-mode="warp">Warp</button>
-  <button class="mode-btn" data-mode="blackhole">Black Hole</button>
-  <button class="mode-btn" data-mode="kaleidoscope">Kaleidoscope</button>
   <button class="mode-btn" data-mode="forest">Forest Stream</button>
   <button class="mode-btn" data-mode="ocean">Deep Ocean</button>
-  <button class="mode-btn" data-mode="aurora">Aurora</button>
   <button class="mode-btn" data-mode="sacred">Sacred Geometry</button>
+  <button class="mode-btn" data-mode="desert">Desert Night</button>
+  <button class="mode-btn" data-mode="storm">Thunderstorm</button>
 </div>
 
 <button id="pulse-toggle" class="on">
@@ -129,8 +126,6 @@ pulseToggleEl.addEventListener('click', function() {
 
 
 const threeCanvas   = document.getElementById('three-canvas');
-const kaleidoCanvas = document.getElementById('kaleido-canvas');
-const kaleidoCtx    = kaleidoCanvas.getContext('2d');
 const cursorEl      = document.getElementById('cursor');
 const labelEl       = document.getElementById('scene-label');
 const uiEl          = document.getElementById('ui');
@@ -145,7 +140,6 @@ let currentMode = 'warp';
 let animId;
 let md = {};
 let mouseNX = 0, mouseNY = 0;
-let kOff, kOffCtx;
 
 const FRAME_MS = 1000 / 30;
 let lastFrame  = 0;
@@ -180,15 +174,6 @@ document.addEventListener('mousemove', e => {
 window.addEventListener('resize', () => {
   const W = window.innerWidth, H = window.innerHeight;
   renderer.setSize(W, H);
-  kaleidoCanvas.width  = W;
-  kaleidoCanvas.height = H;
-  if (kOff) {
-    const sz = Math.floor(Math.min(W, H) * 0.62);
-    kOff.width = sz; kOff.height = sz;
-    kOffCtx = kOff.getContext('2d');
-    kOffCtx.fillStyle = '#000';
-    kOffCtx.fillRect(0, 0, sz, sz);
-  }
   if (camera) { camera.aspect = W / H; camera.updateProjectionMatrix(); }
 });
 
@@ -220,14 +205,12 @@ function switchMode(mode) {
   cancelAnimationFrame(animId);
   disposeScene();
   threeCanvas.style.display   = 'block';
-  kaleidoCanvas.style.display = 'none';
-  kOff = null; kOffCtx = null;
   renderer.setClearColor(0x000000, 1);
   createScene();
   currentMode = mode;
   md = {};
 
-  const labels = { warp: 'Warp', blackhole: 'Black Hole', kaleidoscope: 'Kaleidoscope', forest: 'Forest Stream', ocean: 'Deep Ocean', aurora: 'Aurora', sacred: 'Sacred Geometry' };
+  const labels = { warp: 'Warp', forest: 'Forest Stream', ocean: 'Deep Ocean', sacred: 'Sacred Geometry', desert: 'Desert Night', storm: 'Thunderstorm' };
   labelEl.textContent = labels[mode];
 
   // Show pulse toggle only in Warp mode
@@ -238,7 +221,7 @@ function switchMode(mode) {
     pulseToggleEl.style.opacity = '0';
   }
 
-  ({ warp: initWarp, blackhole: initBlackHole, kaleidoscope: initKaleidoscope, forest: initForest, ocean: initOcean, aurora: initAurora, sacred: initSacred })[mode]();
+  ({ warp: initWarp, forest: initForest, ocean: initOcean, sacred: initSacred, desert: initDesert, storm: initStorm })[mode]();
   loop();
 }
 
@@ -253,15 +236,13 @@ function loop(ts = 0) {
   lastFrame = ts - (dt % FRAME_MS);
   const t = ts * 0.001;
 
-  if (currentMode === 'kaleidoscope') { updateKaleidoscope(t); return; }
-
   switch (currentMode) {
-    case 'warp':      updateWarp(t);      break;
-    case 'blackhole': updateBlackHole(t); break;
-    case 'forest':    updateForest(t);    break;
-    case 'ocean':     updateOcean(t);     break;
-    case 'aurora':    updateAurora(t);    break;
-    case 'sacred':    updateSacred(t);    break;
+    case 'warp':    updateWarp(t);    break;
+    case 'forest':  updateForest(t);  break;
+    case 'ocean':   updateOcean(t);   break;
+    case 'sacred':  updateSacred(t);  break;
+    case 'desert':  updateDesert(t);  break;
+    case 'storm':   updateStorm(t);   break;
   }
   renderer.render(scene, camera);
 }
@@ -444,430 +425,6 @@ function updateWarp(t) {
 
   camera.rotation.x += (-mouseNY * 0.06 - camera.rotation.x) * 0.04;
   camera.rotation.y += ( mouseNX * 0.06 - camera.rotation.y) * 0.04;
-}
-
-// ============================================================
-// MODE 2 — BLACK HOLE (v2: photon ring, density variation, star distortion, camera breathe)
-// ============================================================
-
-function initBlackHole() {
-  camera.position.set(0, 22, 52);
-  camera.lookAt(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x000005, 0.004);
-  renderer.setClearColor(0x000005, 1);
-
-  // [4] Background stars — stored so we can warp them
-  const sCount = 6000;
-  const sPos   = new Float32Array(sCount * 3);
-  const sBase  = new Float32Array(sCount * 3); // undistorted positions
-  for (let i = 0; i < sCount; i++) {
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    const r     = 220 + Math.random() * 180;
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-    sPos[i*3]  = x; sPos[i*3+1]  = y; sPos[i*3+2]  = z;
-    sBase[i*3] = x; sBase[i*3+1] = y; sBase[i*3+2] = z;
-  }
-  const sGeo = new THREE.BufferGeometry();
-  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
-  const starField = new THREE.Points(sGeo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.5, transparent: true, opacity: 0.7,
-  }));
-  scene.add(starField);
-
-  // Event horizon — slightly larger, perfectly black
-  scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(5.4, 48, 48),
-    new THREE.MeshBasicMaterial({ color: 0x000000 })
-  ));
-
-  // [3] Accretion disk — density clumping via non-uniform angular distribution
-  const dCount = 20000;
-  const dPos   = new Float32Array(dCount * 3);
-  const dCol   = new Float32Array(dCount * 3);
-  const dPhase = new Float32Array(dCount); // per-particle orbit phase offset
-
-  // Define 4 dense clump centers around the disk
-  const clumps = [0, Math.PI * 0.5, Math.PI * 1.1, Math.PI * 1.7];
-
-  for (let i = 0; i < dCount; i++) {
-    // Bias angle toward clumps for density variation
-    const clump = clumps[Math.floor(Math.random() * clumps.length)];
-    const ang   = clump + (Math.random() - 0.5) * (Math.random() < 0.4 ? 0.5 : Math.PI * 2);
-    const r     = 6.5 + Math.pow(Math.random(), 0.38) * 22;
-    const ht    = (Math.random() - 0.5) * Math.max(0, 1.8 - (r - 6.5) / 7);
-
-    dPos[i*3]   = Math.cos(ang) * r;
-    dPos[i*3+1] = ht;
-    dPos[i*3+2] = Math.sin(ang) * r;
-
-    // Color: hot white-orange core → cooler red-purple outer
-    const pct = (r - 6.5) / 22;
-    const c   = new THREE.Color();
-    if (pct < 0.15)      c.setHSL(0.08, 1.0, 0.95);  // near-white hot
-    else if (pct < 0.4)  c.setHSL(0.06, 1.0, 0.80);  // orange
-    else if (pct < 0.7)  c.setHSL(0.04, 0.95, 0.65); // deep orange-red
-    else                 c.setHSL(0.75, 0.7, 0.45);   // purple outer fringe
-    dCol[i*3] = c.r; dCol[i*3+1] = c.g; dCol[i*3+2] = c.b;
-    dPhase[i] = Math.random() * Math.PI * 2;
-  }
-
-  const dGeo = new THREE.BufferGeometry();
-  dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
-  dGeo.setAttribute('color',    new THREE.BufferAttribute(dCol, 3));
-  const disk = new THREE.Points(dGeo, new THREE.PointsMaterial({
-    size: 0.13, vertexColors: true, transparent: true, opacity: 0.88,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  scene.add(disk);
-
-  // [1] Photon ring — Einstein ring, thin bright arc around event horizon
-  // Built as a tight torus very close to the horizon
-  const photonRing = new THREE.Mesh(
-    new THREE.TorusGeometry(5.55, 0.18, 12, 180),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff4cc, transparent: true, opacity: 0.92,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-    })
-  );
-  photonRing.rotation.x = Math.PI / 2;
-  scene.add(photonRing);
-
-  // Secondary fainter photon arc (slightly larger radius, off-axis tilt)
-  const photonRing2 = new THREE.Mesh(
-    new THREE.TorusGeometry(5.72, 0.09, 8, 160),
-    new THREE.MeshBasicMaterial({
-      color: 0xffaa55, transparent: true, opacity: 0.45,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-    })
-  );
-  photonRing2.rotation.x = Math.PI / 2;
-  photonRing2.rotation.z = 0.12;
-  scene.add(photonRing2);
-
-  // Inner glow halo (wider, softer)
-  const halo = new THREE.Mesh(
-    new THREE.TorusGeometry(5.9, 2.2, 16, 120),
-    new THREE.MeshBasicMaterial({
-      color: 0xff5500, transparent: true, opacity: 0.07,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-    })
-  );
-  halo.rotation.x = Math.PI / 2;
-  scene.add(halo);
-
-  md.disk        = disk;
-  md.dPos        = dPos;
-  md.dPhase      = dPhase;
-  md.dCount      = dCount;
-  md.photonRing  = photonRing;
-  md.photonRing2 = photonRing2;
-  md.starField   = starField;
-  md.sPos        = sPos;
-  md.sBase       = sBase;
-  md.sCount      = sCount;
-  md.orbitAngle  = 0;
-  // [5] Camera breathe state
-  md.breatheT    = 0;
-  md.baseOrbitR  = 52;
-  md.baseOrbitY  = 22;
-}
-
-function updateBlackHole(t) {
-  // [5] Camera breathe — slow drift toward/away over ~28s cycle
-  md.breatheT += 1 / 30;
-  const breathe   = Math.sin(md.breatheT * Math.PI / 14); // full cycle = 28s
-  const orbitR    = md.baseOrbitR + breathe * 14;          // 38 → 66 range
-  const orbitY    = md.baseOrbitY + breathe * 6;
-  // Fog deepens as we get closer
-  const fogDensity = 0.004 + (1 - (orbitR - 38) / 28) * 0.004;
-  scene.fog.density = fogDensity;
-
-  // Orbit + mouse nudge
-  md.orbitAngle += 0.0022;
-  const a = md.orbitAngle;
-  camera.position.set(
-    Math.cos(a) * orbitR + mouseNX * 4,
-    orbitY       + mouseNY * 5,
-    Math.sin(a) * orbitR
-  );
-  camera.lookAt(0, 0, 0);
-
-  // Disk rotation — inner particles orbit faster (differential rotation)
-  md.disk.rotation.y = t * 0.08;
-
-  // [3] Density wave — shimmer brightness clumps by pulsing opacity slightly
-  md.disk.material.opacity = 0.82 + Math.sin(t * 0.35) * 0.1;
-
-  // [1] Photon ring pulse — subtle brightness oscillation
-  md.photonRing.material.opacity  = 0.85 + Math.sin(t * 0.6) * 0.1;
-  md.photonRing2.material.opacity = 0.38 + Math.sin(t * 0.45 + 1.2) * 0.12;
-
-  // [4] Star gravitational lensing — warp star positions toward event horizon
-  const { sPos, sBase, sCount } = md;
-  const LENS_RADIUS = 55; // stars within this radius get bent
-  for (let i = 0; i < sCount; i++) {
-    const bx = sBase[i*3], by = sBase[i*3+1], bz = sBase[i*3+2];
-    const dist = Math.sqrt(bx*bx + by*by + bz*bz);
-    const flatDist = Math.sqrt(bx*bx + bz*bz); // distance from vertical axis
-    if (flatDist < LENS_RADIUS) {
-      // Pull stars tangentially around the black hole — simulates light bending
-      const warpStrength = Math.pow(1 - flatDist / LENS_RADIUS, 2.5) * 18;
-      const ang = Math.atan2(bz, bx) + warpStrength / dist * 0.06;
-      sPos[i*3]   = Math.cos(ang) * flatDist;
-      sPos[i*3+1] = by + Math.sin(t * 0.15 + i * 0.01) * warpStrength * 0.08;
-      sPos[i*3+2] = Math.sin(ang) * flatDist;
-    } else {
-      sPos[i*3] = bx; sPos[i*3+1] = by; sPos[i*3+2] = bz;
-    }
-  }
-  md.starField.geometry.attributes.position.needsUpdate = true;
-}
-
-// ============================================================
-// MODE 3 — KALEIDOSCOPE (v2: mouse reactive, lissajous, color modes, velocity spin)
-// ============================================================
-
-// Kaleidoscope state lives outside md so it persists across frames cleanly
-let kState = {};
-
-function initKaleidoscope() {
-  threeCanvas.style.display   = 'none';
-  kaleidoCanvas.style.display = 'block';
-  kaleidoCanvas.width  = window.innerWidth;
-  kaleidoCanvas.height = window.innerHeight;
-
-  const sz = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.62);
-  kOff = document.createElement('canvas');
-  kOff.width = sz; kOff.height = sz;
-  kOffCtx = kOff.getContext('2d');
-  kOffCtx.fillStyle = '#000';
-  kOffCtx.fillRect(0, 0, sz, sz);
-
-  // [1][5] Mouse tracking for rotation and velocity
-  kState.mouseX     = 0; // raw -1 to 1
-  kState.mouseY     = 0;
-  kState.prevMouseX = 0;
-  kState.velX       = 0; // velocity
-  kState.spinOffset = 0; // accumulated rotation from mouse X
-  kState.spinMomentum = 0; // [5] velocity-driven spin
-
-  // [2] Segment count — driven by mouse distance from center
-  kState.segs     = 16;
-  kState.targetSegs = 16;
-
-  // [4] Color mode — cycles warm → full → cool → mono over 60s
-  kState.colorPhase = 0;
-}
-
-function drawGeometricSource(t, zoom) {
-  if (!kOffCtx) return;
-  const sz = kOff.width;
-  const cx = sz / 2, cy = sz / 2;
-
-  kOffCtx.fillStyle = 'rgba(0,0,0,0.030)';
-  kOffCtx.fillRect(0, 0, sz, sz);
-
-  // [4] Color mode: slow 60s cycle through warm, full-spectrum, cool, monochrome
-  kState.colorPhase = (kState.colorPhase || 0) + 1 / (60 * 30);
-  const cp    = kState.colorPhase % 1; // 0→1 over 60s
-  let hueBase, sat, lightnessScale;
-  if (cp < 0.25) {
-    // Warm phase — oranges, reds, yellows
-    hueBase = 20 + cp * 80; sat = '100%'; lightnessScale = 1;
-  } else if (cp < 0.5) {
-    // Full spectrum
-    hueBase = t * 12; sat = '100%'; lightnessScale = 1;
-  } else if (cp < 0.75) {
-    // Cool phase — blues, cyans, purples
-    hueBase = 180 + (cp - 0.5) * 120; sat = '90%'; lightnessScale = 0.9;
-  } else {
-    // Monochrome — desaturated silver/white
-    hueBase = t * 4; sat = '20%'; lightnessScale = 1.1;
-  }
-  const hue  = hueBase % 360;
-  const hue2 = (hue + 137) % 360;
-  const hue3 = (hue + 274) % 360;
-
-  // [1] Apply mouse-Y zoom to source canvas
-  const scale = zoom || 1;
-  kOffCtx.save();
-  kOffCtx.translate(cx, cy);
-  kOffCtx.scale(scale, scale);
-  kOffCtx.translate(-cx, -cy);
-
-  // Rotating polygon rings
-  const polygons = [
-    { sides: 6,  r: sz * (0.28 + Math.sin(t * 0.17) * 0.04), rot:  t * 0.21,  stroke: 'hsla(' + hue  + ',' + sat + ',' + (70 * lightnessScale) + '%,0.65)', lw: sz * 0.006 },
-    { sides: 4,  r: sz * (0.20 + Math.cos(t * 0.23) * 0.03), rot: -t * 0.28,  stroke: 'hsla(' + hue2 + ',' + sat + ',' + (65 * lightnessScale) + '%,0.55)', lw: sz * 0.005 },
-    { sides: 8,  r: sz * (0.35 + Math.sin(t * 0.13) * 0.05), rot:  t * 0.14,  stroke: 'hsla(' + hue3 + ',' + sat + ',' + (60 * lightnessScale) + '%,0.45)', lw: sz * 0.004 },
-    { sides: 3,  r: sz * (0.14 + Math.cos(t * 0.31) * 0.02), rot:  t * 0.38,  stroke: 'hsla(' + hue  + ',' + sat + ',' + (80 * lightnessScale) + '%,0.50)', lw: sz * 0.004 },
-    { sides: 12, r: sz * (0.42 + Math.sin(t * 0.09) * 0.06), rot: -t * 0.11,  stroke: 'hsla(' + hue2 + ',' + sat + ',' + (55 * lightnessScale) + '%,0.35)', lw: sz * 0.003 },
-  ];
-
-  polygons.forEach(function(p) {
-    kOffCtx.save();
-    kOffCtx.translate(cx, cy);
-    kOffCtx.rotate(p.rot);
-    kOffCtx.beginPath();
-    for (let v = 0; v <= p.sides; v++) {
-      const a = (v / p.sides) * Math.PI * 2 - Math.PI / 2;
-      v === 0 ? kOffCtx.moveTo(Math.cos(a) * p.r, Math.sin(a) * p.r)
-              : kOffCtx.lineTo(Math.cos(a) * p.r, Math.sin(a) * p.r);
-    }
-    kOffCtx.strokeStyle = p.stroke;
-    kOffCtx.lineWidth   = p.lw;
-    kOffCtx.stroke();
-    kOffCtx.restore();
-  });
-
-  // [3] Lissajous / spirograph curves — never quite repeat
-  const lissajous = [
-    { A: sz*0.32, B: sz*0.28, a: 3, b: 2, delta: t * 0.18,        hue: hue,  alpha: 0.38 },
-    { A: sz*0.22, B: sz*0.24, a: 5, b: 4, delta: t * 0.11 + 1.0,  hue: hue2, alpha: 0.30 },
-    { A: sz*0.38, B: sz*0.20, a: 7, b: 6, delta: t * 0.07 + 2.1,  hue: hue3, alpha: 0.22 },
-    { A: sz*0.18, B: sz*0.36, a: 4, b: 3, delta: t * 0.14 + 0.5,  hue: hue,  alpha: 0.28 },
-  ];
-
-  lissajous.forEach(function(lj) {
-    kOffCtx.save();
-    kOffCtx.translate(cx, cy);
-    kOffCtx.beginPath();
-    const steps = 220;
-    for (let s = 0; s <= steps; s++) {
-      const theta = (s / steps) * Math.PI * 2;
-      const lx = lj.A * Math.sin(lj.a * theta + lj.delta);
-      const ly = lj.B * Math.sin(lj.b * theta);
-      s === 0 ? kOffCtx.moveTo(lx, ly) : kOffCtx.lineTo(lx, ly);
-    }
-    kOffCtx.strokeStyle = 'hsla(' + lj.hue + ',' + sat + ',72%,' + lj.alpha + ')';
-    kOffCtx.lineWidth   = sz * 0.0035;
-    kOffCtx.stroke();
-    kOffCtx.restore();
-  });
-
-  // Orbiting mandala dots
-  const orbits = [
-    { count: 8,  orbitR: sz * 0.22, dotR: sz * 0.016, speed:  0.29, h: hue,  alpha: 0.75 },
-    { count: 12, orbitR: sz * 0.31, dotR: sz * 0.010, speed: -0.19, h: hue2, alpha: 0.60 },
-    { count: 6,  orbitR: sz * 0.16, dotR: sz * 0.013, speed:  0.41, h: hue3, alpha: 0.70 },
-    { count: 16, orbitR: sz * 0.40, dotR: sz * 0.007, speed: -0.13, h: hue,  alpha: 0.45 },
-  ];
-
-  orbits.forEach(function(o) {
-    for (let d = 0; d < o.count; d++) {
-      const ang = (d / o.count) * Math.PI * 2 + t * o.speed;
-      const dx  = cx + Math.cos(ang) * o.orbitR;
-      const dy  = cy + Math.sin(ang) * o.orbitR;
-      const g   = kOffCtx.createRadialGradient(dx, dy, 0, dx, dy, o.dotR);
-      g.addColorStop(0,   'hsla(' + o.h + ',' + sat + ',90%,' + o.alpha + ')');
-      g.addColorStop(0.5, 'hsla(' + ((o.h+40)%360) + ',' + sat + ',65%,' + (o.alpha * 0.5) + ')');
-      g.addColorStop(1,   'hsla(' + o.h + ',' + sat + ',50%,0)');
-      kOffCtx.beginPath();
-      kOffCtx.arc(dx, dy, o.dotR, 0, Math.PI * 2);
-      kOffCtx.fillStyle = g;
-      kOffCtx.fill();
-    }
-  });
-
-  // Laser lines from center
-  for (let l = 0; l < 7; l++) {
-    const a   = (l / 7) * Math.PI * 2 + t * 0.09;
-    const len = sz * (0.38 + Math.sin(t * 0.22 + l) * 0.06);
-    const lh  = (hue + l * 51) % 360;
-    kOffCtx.save();
-    kOffCtx.translate(cx, cy);
-    kOffCtx.rotate(a);
-    const lg = kOffCtx.createLinearGradient(0, 0, len, 0);
-    lg.addColorStop(0,   'hsla(' + lh + ',' + sat + ',85%,0.55)');
-    lg.addColorStop(0.6, 'hsla(' + lh + ',' + sat + ',60%,0.22)');
-    lg.addColorStop(1,   'hsla(' + lh + ',' + sat + ',50%,0)');
-    kOffCtx.beginPath();
-    kOffCtx.moveTo(0, 0);
-    kOffCtx.lineTo(len, 0);
-    kOffCtx.strokeStyle = lg;
-    kOffCtx.lineWidth   = sz * 0.003;
-    kOffCtx.stroke();
-    kOffCtx.restore();
-  }
-
-  // Pulsing center bloom
-  const bloomR = sz * (0.07 + Math.sin(t * 0.55) * 0.025);
-  const bloom  = kOffCtx.createRadialGradient(cx, cy, 0, cx, cy, bloomR);
-  bloom.addColorStop(0,   'hsla(' + hue  + ',' + sat + ',98%,0.9)');
-  bloom.addColorStop(0.4, 'hsla(' + hue2 + ',' + sat + ',70%,0.5)');
-  bloom.addColorStop(1,   'hsla(' + hue3 + ',' + sat + ',50%,0)');
-  kOffCtx.beginPath();
-  kOffCtx.arc(cx, cy, bloomR, 0, Math.PI * 2);
-  kOffCtx.fillStyle = bloom;
-  kOffCtx.fill();
-
-  kOffCtx.restore(); // end zoom transform
-}
-
-function updateKaleidoscope(t) {
-  if (!kOffCtx) return;
-  const W  = kaleidoCanvas.width, H = kaleidoCanvas.height;
-  const cx = W / 2, cy = H / 2;
-  const R  = Math.min(cx, cy) * 0.985;
-
-  // [5] Mouse velocity drives spin momentum
-  kState.velX       = mouseNX - kState.prevMouseX;
-  kState.prevMouseX = mouseNX;
-  kState.spinMomentum += kState.velX * 0.18;
-  kState.spinMomentum *= 0.92; // friction — momentum decays naturally
-  kState.spinOffset   += kState.spinMomentum;
-
-  // [1] Mouse X = rotation offset, Mouse Y = zoom (0.7 → 1.4)
-  const mouseRotation = kState.spinOffset;
-  const zoom = 0.7 + (1 - mouseNY) * 0.5 * 0.7; // mouseNY -1→1 maps to 1.4→0.7
-
-  // [2] Segment count from mouse distance to center (clamped to even numbers 8→32)
-  const mouseDist  = Math.sqrt(mouseNX * mouseNX + mouseNY * mouseNY) / Math.SQRT2;
-  const targetSegs = Math.round((8 + mouseDist * 24) / 2) * 2; // even only
-  kState.segs += (targetSegs - kState.segs) * 0.06; // smooth interpolation
-  const SEGS  = Math.max(8, Math.min(32, Math.round(kState.segs / 2) * 2));
-  const sAng  = (Math.PI * 2) / SEGS;
-
-  drawGeometricSource(t, zoom);
-
-  const ctx = kaleidoCtx;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-
-  // [1] Apply mouse-X rotation to entire kaleidoscope
-  ctx.rotate(mouseRotation + t * 0.008);
-
-  for (let i = 0; i < SEGS; i++) {
-    ctx.save();
-    ctx.rotate(sAng * i);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, R, -sAng / 2, sAng / 2);
-    ctx.closePath();
-    ctx.clip();
-    if (i % 2 === 0) {
-      ctx.drawImage(kOff, -R, -R, R * 2, R * 2);
-    } else {
-      ctx.scale(-1, 1);
-      ctx.drawImage(kOff, -R, -R, R * 2, R * 2);
-    }
-    ctx.restore();
-  }
-
-  // Dark framing ring
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.lineWidth   = 4;
-  ctx.stroke();
-
-  ctx.restore();
 }
 
 // ============================================================
@@ -1552,279 +1109,6 @@ function updateOcean(t) {
 }
 
 // ============================================================
-// MODE 6 — AURORA
-// ============================================================
-
-function initAurora() {
-  camera.position.set(0, 3, 0);
-  camera.rotation.set(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x000410, 0.006);
-  renderer.setClearColor(0x000410, 1);
-
-  // Star field — upper hemisphere only
-  const STARS = 6000;
-  const sPos = new Float32Array(STARS * 3);
-  for (let i = 0; i < STARS; i++) {
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    const r     = 320 + Math.random() * 120;
-    sPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    sPos[i*3+1] = Math.abs(r * Math.sin(phi) * Math.sin(theta)) + 10;
-    sPos[i*3+2] = r * Math.cos(phi);
-  }
-  const sGeo = new THREE.BufferGeometry();
-  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
-  scene.add(new THREE.Points(sGeo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.5, transparent: true, opacity: 0.72,
-  })));
-
-  // [4] Tundra ground — flat base + rolling hill silhouettes
-  const groundGeo = new THREE.PlaneGeometry(600, 600);
-  groundGeo.rotateX(-Math.PI / 2);
-  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x00020a })));
-
-  // Hill silhouettes — dark curved shapes on horizon
-  const hills = [];
-  for (let h = 0; h < 10; h++) {
-    const hillW = 60 + Math.random() * 80;
-    const hillH = 3 + Math.random() * 5;
-    const geo = new THREE.SphereGeometry(hillW * 0.5, 18, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x00010a });
-    const hill = new THREE.Mesh(geo, mat);
-    hill.scale.set(1, hillH / (hillW * 0.5), 0.25);
-    hill.position.set(
-      (Math.random() - 0.5) * 250,
-      -hillH * 0.5 + 0.5,
-      -(80 + Math.random() * 200)
-    );
-    scene.add(hill);
-    hills.push(hill);
-  }
-
-  // [4] Snow shimmer — faint additive layer on ground reflecting aurora
-  const snowGeo = new THREE.PlaneGeometry(500, 500, 1, 1);
-  snowGeo.rotateX(-Math.PI / 2);
-  const snowMat = new THREE.MeshBasicMaterial({
-    color: 0x003322, transparent: true, opacity: 0.0,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const snowMesh = new THREE.Mesh(snowGeo, snowMat);
-  snowMesh.position.y = 0.05;
-  scene.add(snowMesh);
-
-  // [1] Curtains in 3 depth layers: far (diffuse), mid, near (sharp)
-  // [5] Color event timer — global phase drives hue cycle
-  const curtains = [];
-  const layers = [
-    { count: 8, zRange: [180, 350], wScale: 1.8, hScale: 1.4, baseOp: 0.18, waveAmp: 1.2 }, // far — wide, diffuse
-    { count: 8, zRange: [60,  180], wScale: 1.2, hScale: 1.1, baseOp: 0.38, waveAmp: 2.0 }, // mid
-    { count: 6, zRange: [18,   60], wScale: 0.8, hScale: 0.9, baseOp: 0.55, waveAmp: 2.8 }, // near — sharp, bright
-  ];
-
-  layers.forEach(function(layer, li) {
-    for (let c = 0; c < layer.count; c++) {
-      const W = (14 + Math.random() * 22) * layer.wScale;
-      const H = (20 + Math.random() * 30) * layer.hScale;
-      const segsW = 14, segsH = 28;
-      const geo = new THREE.PlaneGeometry(W, H, segsW, segsH);
-      geo.rotateX(Math.PI / 2);
-
-      const posArr = geo.attributes.position.array;
-      const vCount = posArr.length / 3;
-      const colors = new Float32Array(vCount * 3);
-      // Seed hue — will be overridden each frame by color event system
-      const hue = 0.38 + Math.random() * 0.06;
-      for (let v = 0; v < vCount; v++) {
-        const pct = (posArr[v*3+2] + H / 2) / H;
-        const col = new THREE.Color().setHSL(hue, 1.0, 0.55 + pct * 0.3);
-        colors[v*3] = col.r * pct; colors[v*3+1] = col.g * pct; colors[v*3+2] = col.b * pct;
-      }
-      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-      const mat = new THREE.MeshBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0,
-        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      const zMin = layer.zRange[0], zMax = layer.zRange[1];
-      mesh.position.set(
-        (Math.random() - 0.5) * 140,
-        H / 2 + 4,
-        -(zMin + Math.random() * (zMax - zMin))
-      );
-      mesh.rotation.y = (Math.random() - 0.5) * 0.5;
-      scene.add(mesh);
-
-      // [2] Inner glow — a wider, softer plane behind each curtain
-      const glowGeo = new THREE.PlaneGeometry(W * 1.6, H * 0.7, 2, 2);
-      glowGeo.rotateX(Math.PI / 2);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color().setHSL(hue, 1.0, 0.5),
-        transparent: true, opacity: 0,
-        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-      });
-      const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-      glowMesh.position.copy(mesh.position);
-      glowMesh.position.z += 1.5; // slightly behind curtain
-      glowMesh.rotation.y = mesh.rotation.y;
-      scene.add(glowMesh);
-
-      // [3] Vertical ray streaks — line segments shooting upward inside curtain
-      const RAY_COUNT = 18;
-      const rayPos = new Float32Array(RAY_COUNT * 2 * 3);
-      for (let r = 0; r < RAY_COUNT; r++) {
-        const rx = (Math.random() - 0.5) * W * 0.9;
-        const ry = (Math.random() - 0.5) * H * 0.5;
-        const rayH = H * (0.3 + Math.random() * 0.5);
-        rayPos[r*6]   = rx; rayPos[r*6+1] = ry;         rayPos[r*6+2] = 0;
-        rayPos[r*6+3] = rx; rayPos[r*6+4] = ry + rayH;  rayPos[r*6+5] = 0;
-      }
-      const rayGeo = new THREE.BufferGeometry();
-      rayGeo.setAttribute('position', new THREE.BufferAttribute(rayPos, 3));
-      const rayMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color().setHSL(hue, 1.0, 0.8),
-        transparent: true, opacity: 0,
-        blending: THREE.AdditiveBlending,
-      });
-      const rays = new THREE.LineSegments(rayGeo, rayMat);
-      rays.rotation.copy(mesh.rotation);
-      rays.position.copy(mesh.position);
-      scene.add(rays);
-
-      curtains.push({
-        mesh, glowMesh, rays,
-        phase: Math.random() * Math.PI * 2,
-        hue, H, W, segsW, segsH,
-        waveSpeed: 0.14 + Math.random() * 0.18,
-        baseOp: layer.baseOp * (0.7 + Math.random() * 0.6),
-        waveAmp: layer.waveAmp,
-        layer: li,
-        zBase: mesh.position.z,
-      });
-    }
-  });
-
-  // Shimmer motes
-  const MOTES = 1600;
-  const mPos = new Float32Array(MOTES * 3);
-  const mCol = new Float32Array(MOTES * 3);
-  for (let i = 0; i < MOTES; i++) {
-    mPos[i*3]   = (Math.random() - 0.5) * 120;
-    mPos[i*3+1] = 3 + Math.random() * 40;
-    mPos[i*3+2] = -(Math.random() * 350);
-    const hue = 0.35 + Math.random() * 0.45;
-    const col = new THREE.Color().setHSL(hue, 1, 0.72);
-    mCol[i*3] = col.r; mCol[i*3+1] = col.g; mCol[i*3+2] = col.b;
-  }
-  const mGeo = new THREE.BufferGeometry();
-  mGeo.setAttribute('position', new THREE.BufferAttribute(mPos, 3));
-  mGeo.setAttribute('color',    new THREE.BufferAttribute(mCol, 3));
-  const motes = new THREE.Points(mGeo, new THREE.PointsMaterial({
-    size: 0.2, vertexColors: true, transparent: true, opacity: 0.45,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  scene.add(motes);
-
-  md.curtains  = curtains;
-  md.snowMesh  = snowMesh;
-  md.hills     = hills;
-  md.motes     = motes; md.mPos = mPos; md.MOTES = MOTES;
-  md.camZ      = 0;
-  // [5] Color event state — 45s cycle: green→cyan→violet→pink
-  md.colorCycle = 0;
-}
-
-function updateAurora(t) {
-  const { mPos, MOTES } = md;
-  const speed = 0.016;
-
-  md.camZ -= speed;
-  camera.position.z = md.camZ;
-  camera.position.x += (mouseNX * 3.5 - camera.position.x) * 0.01;
-  camera.position.y += (3 - mouseNY * 2 - camera.position.y) * 0.01;
-  camera.lookAt(camera.position.x * 0.06, 9, camera.position.z - 18);
-
-  // [5] Global color event — 45s cycle drives all curtain hues
-  md.colorCycle += 1 / (45 * 30); // full cycle = 45s
-  const cp = md.colorCycle % 1;
-  // Four phases: 0-0.25 green, 0.25-0.5 cyan, 0.5-0.75 violet, 0.75-1.0 pink→green
-  let globalHue;
-  if (cp < 0.25)      globalHue = 0.38 + (cp / 0.25) * 0.1;        // green → cyan
-  else if (cp < 0.5)  globalHue = 0.48 + ((cp-0.25)/0.25) * 0.22;  // cyan → violet
-  else if (cp < 0.75) globalHue = 0.70 + ((cp-0.5)/0.25) * 0.22;   // violet → pink
-  else                globalHue = 0.92 + ((cp-0.75)/0.25) * (-0.54); // pink → green
-
-  // [4] Snow shimmer reflects current aurora color
-  md.snowMesh.material.color.setHSL(globalHue, 0.9, 0.35);
-  md.snowMesh.material.opacity = 0.04 + Math.sin(t * 0.18) * 0.025;
-
-  // Curtains
-  md.curtains.forEach(function(c) {
-    // [5] Per-curtain hue blends toward global color event with individual offset
-    const curtainHue = (globalHue + c.phase * 0.08 + 1) % 1;
-
-    // Opacity pulse — near curtains brighter, far ones dreamier
-    const opMult = 0.55 + Math.sin(t * 0.18 + c.phase) * 0.45;
-    c.mesh.material.opacity = c.baseOp * opMult;
-
-    // [2] Inner glow pulses slightly out of phase with curtain
-    c.glowMesh.material.color.setHSL(curtainHue, 1.0, 0.45);
-    c.glowMesh.material.opacity = c.baseOp * 0.35 * (0.5 + Math.sin(t * 0.22 + c.phase + 0.8) * 0.5);
-
-    // [3] Rays pulse and shift color
-    c.rays.material.color.setHSL((curtainHue + 0.05) % 1, 1.0, 0.85);
-    c.rays.material.opacity = c.baseOp * 0.6 * (0.4 + Math.sin(t * 0.35 + c.phase * 1.3) * 0.6);
-
-    // Wave curtain vertices + recolor
-    const pos  = c.mesh.geometry.attributes.position.array;
-    const cols = c.mesh.geometry.attributes.color.array;
-    const vCount = pos.length / 3;
-    for (let v = 0; v < vCount; v++) {
-      const origX = ((v % (c.segsW + 1)) / c.segsW - 0.5) * c.W;
-      const pct   = Math.max(0, Math.min(1, (pos[v*3+2] + c.H / 2) / c.H));
-
-      // [1] Wave amplitude varies by layer — near curtains ripple more
-      pos[v*3] = origX
-        + Math.sin(t * c.waveSpeed + origX * 0.14 + c.phase) * pct * c.waveAmp
-        + Math.sin(t * c.waveSpeed * 0.55 + origX * 0.07 + c.phase * 1.3) * pct * c.waveAmp * 0.55;
-
-      // [5] Color: bottom = current global hue, top shifts +0.12 (pink tips on green)
-      const topHue = (curtainHue + 0.12 * pct) % 1;
-      const lum    = 0.52 + pct * 0.32;
-      const col    = new THREE.Color().setHSL(topHue, 1.0, lum);
-      cols[v*3] = col.r * pct; cols[v*3+1] = col.g * pct; cols[v*3+2] = col.b * pct;
-    }
-    c.mesh.geometry.attributes.position.needsUpdate = true;
-    c.mesh.geometry.attributes.color.needsUpdate    = true;
-
-    // Scroll curtains forward — near layers scroll faster (parallax)
-    const scrollSpeed = speed * (0.2 + c.layer * 0.12);
-    c.mesh.position.z     += scrollSpeed;
-    c.glowMesh.position.z += scrollSpeed;
-    c.rays.position.z     += scrollSpeed;
-    const wrap = 210 + c.layer * 145;
-    if (c.mesh.position.z > camera.position.z + 12) {
-      c.mesh.position.z     -= wrap;
-      c.glowMesh.position.z -= wrap;
-      c.rays.position.z     -= wrap;
-    }
-  });
-
-  // Shimmer motes drift
-  for (let i = 0; i < MOTES; i++) {
-    mPos[i*3]   += Math.sin(t * 0.28 + i * 0.9) * 0.006;
-    mPos[i*3+1] += Math.cos(t * 0.2  + i * 0.6) * 0.003;
-    mPos[i*3+2] += speed * 0.55;
-    if (mPos[i*3+2] > camera.position.z + 10) {
-      mPos[i*3]   = (Math.random() - 0.5) * 120;
-      mPos[i*3+1] = 3 + Math.random() * 40;
-      mPos[i*3+2] = camera.position.z - 350;
-    }
-  }
-  md.motes.geometry.attributes.position.needsUpdate = true;
-}
-
-// ============================================================
 // MODE 7 — SACRED GEOMETRY
 // ============================================================
 
@@ -1984,6 +1268,820 @@ function updateSacred(t) {
 }
 
 
+
+
+// ============================================================
+// MODE 8 — DESERT NIGHT
+// ============================================================
+
+function initDesert() {
+  camera.position.set(0, 3, 0);
+  camera.rotation.set(0, 0, 0);
+  scene.fog = new THREE.FogExp2(0x02020e, 0.008);
+  renderer.setClearColor(0x02020e, 1);
+
+  // Background sphere
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(600, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x00000c, side: THREE.BackSide })
+  ));
+
+  // [5] Stars with per-star twinkle phase
+  const STARS = 7000;
+  const sPos   = new Float32Array(STARS * 3);
+  const sCol   = new Float32Array(STARS * 3);
+  const sTwink = new Float32Array(STARS); // twinkle phase per star
+  for (let i = 0; i < STARS; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    const r     = 280 + Math.random() * 100;
+    sPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    sPos[i*3+1] = Math.abs(r * Math.sin(phi) * Math.sin(theta)) + 2;
+    sPos[i*3+2] = r * Math.cos(phi);
+    const warm  = Math.random() < 0.3;
+    const col   = new THREE.Color().setHSL(warm ? 0.1 : 0.62, 0.3, 0.7 + Math.random() * 0.3);
+    sCol[i*3] = col.r; sCol[i*3+1] = col.g; sCol[i*3+2] = col.b;
+    sTwink[i] = Math.random() * Math.PI * 2;
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+  sGeo.setAttribute('color',    new THREE.BufferAttribute(sCol, 3));
+  const starPoints = new THREE.Points(sGeo, new THREE.PointsMaterial({
+    vertexColors: true, size: 0.45, transparent: true, opacity: 0.85,
+  }));
+  scene.add(starPoints);
+
+  // Moon
+  const moon = new THREE.Mesh(
+    new THREE.SphereGeometry(4.5, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf0eacc, transparent: true, opacity: 0.95 })
+  );
+  moon.position.set(-35, 55, -280);
+  scene.add(moon);
+
+  // Moon soft outer glow
+  const moonGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(9, 16, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0xddeeff, transparent: true, opacity: 0.07,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+  );
+  moonGlow.position.copy(moon.position);
+  scene.add(moonGlow);
+
+  // [1] Moonlight color grading — blue-silver wash across scene
+  const moonlightGeo = new THREE.PlaneGeometry(600, 600);
+  moonlightGeo.rotateX(-Math.PI / 2);
+  const moonlightMat = new THREE.MeshBasicMaterial({
+    color: 0x1a2a5a, transparent: true, opacity: 0.28,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const moonlight = new THREE.Mesh(moonlightGeo, moonlightMat);
+  moonlight.position.y = 0.5;
+  scene.add(moonlight);
+
+  // [1] Horizon glow — brighter tint near horizon
+  const horizonGeo = new THREE.PlaneGeometry(600, 80);
+  const horizonMat = new THREE.MeshBasicMaterial({
+    color: 0x223366, transparent: true, opacity: 0.32,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const horizonMesh = new THREE.Mesh(horizonGeo, horizonMat);
+  horizonMesh.position.set(0, 2, -120);
+  horizonMesh.rotation.x = Math.PI / 2 - 0.18;
+  scene.add(horizonMesh);
+
+  // Ground — slightly blue-tinted
+  const groundGeo = new THREE.PlaneGeometry(600, 600);
+  groundGeo.rotateX(-Math.PI / 2);
+  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x0c0e1c })));
+
+  // Moon shimmer on sand
+  const shimmerGeo = new THREE.PlaneGeometry(400, 400);
+  shimmerGeo.rotateX(-Math.PI / 2);
+  const shimmer = new THREE.Mesh(shimmerGeo, new THREE.MeshBasicMaterial({
+    color: 0x3355aa, transparent: true, opacity: 0.05,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  shimmer.position.y = -1.75;
+  scene.add(shimmer);
+
+  // [3] Heat shimmer / atmospheric distortion — wavy horizon band
+  const shimmerBandGeo = new THREE.PlaneGeometry(500, 12);
+  const shimmerBandMat = new THREE.MeshBasicMaterial({
+    color: 0x334466, transparent: true, opacity: 0.0,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const shimmerBand = new THREE.Mesh(shimmerBandGeo, shimmerBandMat);
+  shimmerBand.position.set(0, 1.2, -95);
+  shimmerBand.rotation.x = Math.PI / 2 - 0.08;
+  scene.add(shimmerBand);
+
+  // [2] Dunes with ridge highlight lines
+  const dunes = [];
+  for (let d = 0; d < 16; d++) {
+    const W = 55 + Math.random() * 90;
+    const H = 4 + Math.random() * 9;
+    const lum = 0.025 + Math.random() * 0.02;
+
+    // Dune body
+    const geo  = new THREE.SphereGeometry(W * 0.5, 20, 10);
+    const dune = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: new THREE.Color().setHSL(0.62, 0.25, lum * 2.8 + 0.045), // blue-grey tint
+    }));
+    dune.scale.set(1, H / (W * 0.5), 0.3);
+    const dx = (Math.random() - 0.5) * 200;
+    const dz = -(50 + Math.random() * 220);
+    dune.position.set(dx, -H * 0.45 + 0.8, dz);
+    scene.add(dune);
+
+    // [2] Ridge highlight — thin bright line along dune crest
+    const ridgePoints = [];
+    const ridgeSegs = 18;
+    for (let r = 0; r <= ridgeSegs; r++) {
+      const rx = dx + (r / ridgeSegs - 0.5) * W * 0.88;
+      const ry = -H * 0.45 + 0.8 + H * 0.92; // top of dune
+      ridgePoints.push(rx, ry, dz + 0.05);
+    }
+    const ridgeGeo = new THREE.BufferGeometry();
+    ridgeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ridgePoints), 3));
+    const ridge = new THREE.Line(ridgeGeo, new THREE.LineBasicMaterial({
+      color: 0xccddf5, transparent: true, opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+    }));
+    scene.add(ridge);
+
+    dunes.push({ dune, ridge, W, H, dx });
+  }
+
+  // [4] Landmark silhouettes — saguaro cacti + rock formations
+  const landmarks = [];
+
+  // Saguaro cacti
+  for (let c = 0; c < 10; c++) {
+    const side  = Math.random() < 0.5 ? -1 : 1;
+    const baseX = side * (6 + Math.random() * 28);
+    const baseZ = -(15 + Math.random() * 120);
+    const trunkH = 3 + Math.random() * 4;
+    const trunkR = 0.18 + Math.random() * 0.14;
+    const col = new THREE.MeshBasicMaterial({ color: 0x04060e });
+
+    // Main trunk
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 6), col);
+    trunk.position.set(baseX, -1.8 + trunkH / 2, baseZ);
+    scene.add(trunk);
+
+    // Arms — 1 or 2 per cactus
+    const armCount = Math.floor(Math.random() * 2) + 1;
+    for (let a = 0; a < armCount; a++) {
+      const armSide = a === 0 ? 1 : -1;
+      const armH    = 1.2 + Math.random() * 1.5;
+      const armY    = trunkH * (0.45 + Math.random() * 0.25);
+      // Horizontal segment
+      const armH1 = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.55, trunkR * 0.55, 1.2, 5), col);
+      armH1.rotation.z = Math.PI / 2;
+      armH1.position.set(baseX + armSide * 0.6, -1.8 + armY, baseZ);
+      scene.add(armH1);
+      // Vertical segment
+      const armV = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.5, trunkR * 0.55, armH, 5), col);
+      armV.position.set(baseX + armSide * 1.2, -1.8 + armY + armH / 2, baseZ);
+      scene.add(armV);
+    }
+    landmarks.push({ type: 'cactus', baseZ, trunk });
+  }
+
+  // Rock formations
+  for (let r = 0; r < 8; r++) {
+    const side  = Math.random() < 0.5 ? -1 : 1;
+    const baseX = side * (4 + Math.random() * 22);
+    const baseZ = -(20 + Math.random() * 130);
+    const rockCount = 2 + Math.floor(Math.random() * 3);
+    for (let rc = 0; rc < rockCount; rc++) {
+      const rW = 0.8 + Math.random() * 2.2;
+      const rH = 0.6 + Math.random() * 2.5;
+      const geo = new THREE.DodecahedronGeometry(rW * 0.6, 0);
+      const rock = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x060810 }));
+      rock.scale.set(1, rH / (rW * 0.6), 0.75 + Math.random() * 0.4);
+      rock.position.set(baseX + (Math.random() - 0.5) * rW, -1.8 + rH * 0.5, baseZ + (Math.random() - 0.5) * rW);
+      rock.rotation.y = Math.random() * Math.PI;
+      scene.add(rock);
+    }
+    landmarks.push({ type: 'rock', baseZ });
+  }
+
+  // Shooting stars
+  const shootingStars = [];
+  for (let s = 0; s < 8; s++) {
+    const pos = new Float32Array(6);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: 0xeeeeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    }));
+    scene.add(line);
+    shootingStars.push({ line, pos, active: false, age: 0,
+      maxAge: 0.9 + Math.random() * 0.5, nextSpawn: 3 + Math.random() * 10,
+      x: 0, y: 0, z: 0, dx: 0, dy: 0 });
+  }
+
+  // Dust
+  const DUST = 2200;
+  const dPos = new Float32Array(DUST * 3);
+  const dSpeeds = new Float32Array(DUST);
+  for (let i = 0; i < DUST; i++) {
+    dPos[i*3]   = (Math.random() - 0.5) * 60;
+    dPos[i*3+1] = -1.5 + Math.random() * 1.8;
+    dPos[i*3+2] = -(Math.random() * 80);
+    dSpeeds[i]  = 0.01 + Math.random() * 0.025;
+  }
+  const dGeo = new THREE.BufferGeometry();
+  dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+  const dustPoints = new THREE.Points(dGeo, new THREE.PointsMaterial({
+    color: 0x8899bb, size: 0.07, transparent: true, opacity: 0.3,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  scene.add(dustPoints);
+
+  md.moon        = moon;
+  md.moonGlow    = moonGlow;
+  md.moonlight   = moonlight;
+  md.horizonMesh = horizonMesh;
+  md.shimmer     = shimmer;
+  md.shimmerBand = shimmerBand;
+  md.starPoints  = starPoints;
+  md.sTwink      = sTwink;
+  md.STARS       = STARS;
+  md.shootingStars = shootingStars;
+  md.dustPoints  = dustPoints;
+  md.dPos        = dPos; md.dSpeeds = dSpeeds; md.DUST = DUST;
+  md.dunes       = dunes;
+  md.landmarks   = landmarks;
+  md.camZ        = 0;
+
+  // ── Wildlife ─────────────────────────────────────────────────
+  md.wildlife = [];
+  md.wildlifeTimer = 0;
+  md.wildlifeInterval = 2; // first spawn fast, subsequent ones random
+}
+
+function updateDesert(t) {
+  const { dPos, dSpeeds, DUST } = md;
+  const speed = 0.022;
+  md.camZ -= speed;
+  camera.position.z = md.camZ;
+  camera.position.x += (mouseNX * 2 - camera.position.x) * 0.012;
+  camera.position.y += (3 - mouseNY * 1.2 - camera.position.y) * 0.012;
+  camera.lookAt(camera.position.x * 0.07, 1.5, camera.position.z - 14);
+
+  // Moon tracks with camera
+  md.moon.position.x = camera.position.x - 35;
+  md.moon.position.z = camera.position.z - 280;
+  md.moonGlow.position.copy(md.moon.position);
+
+  // [1] Moonlight grading follows camera
+  md.moonlight.position.z   = camera.position.z;
+  md.horizonMesh.position.z = camera.position.z - 120;
+  md.shimmer.position.z     = camera.position.z;
+  md.shimmer.material.opacity = 0.04 + Math.sin(t * 0.25) * 0.015;
+
+  // [1] Moonlight gently breathes
+  md.moonlight.material.opacity = 0.24 + Math.sin(t * 0.18) * 0.04;
+
+  // [3] Heat shimmer band ripples at horizon
+  md.shimmerBand.position.z = camera.position.z - 95;
+  md.shimmerBand.material.opacity = 0.06 + Math.sin(t * 1.8) * 0.04;
+  // Subtle vertex wave on shimmer band
+  const sbPos = md.shimmerBand.geometry.attributes.position;
+  if (sbPos) {
+    const arr = sbPos.array;
+    for (let v = 0; v < arr.length / 3; v++) {
+      arr[v*3+1] = Math.sin(t * 2.2 + arr[v*3] * 0.08) * 0.12;
+    }
+    sbPos.needsUpdate = true;
+  }
+
+  // [2] Dunes + ridge highlights scroll
+  md.dunes.forEach(function(d) {
+    d.dune.position.z  += speed * 0.28;
+    d.ridge.position.z += speed * 0.28;
+    if (d.dune.position.z > camera.position.z + 8) {
+      d.dune.position.z  -= 240;
+      d.ridge.position.z -= 240;
+    }
+    // Ridge brightens when dune is closer
+    const dist = Math.abs(d.dune.position.z - camera.position.z);
+    d.ridge.material.opacity = Math.max(0, 0.80 - dist / 160);
+  });
+
+  // [4] Landmarks scroll
+  md.landmarks.forEach(function(lm) {
+    // Scroll all scene objects — cacti trunks and rocks scroll via their mesh position
+    // We use the trunk as the anchor for cacti, rock groups just scroll by baseZ offset
+    if (lm.trunk) {
+      lm.trunk.position.z += speed * 0.3;
+      if (lm.trunk.position.z > camera.position.z + 8) {
+        const shift = 145;
+        lm.trunk.position.z -= shift;
+      }
+    }
+  });
+
+  // [5] Stars twinkle — update opacity per frame based on per-star phase
+  const twinkleBase = 0.75;
+  let totalOp = 0;
+  for (let i = 0; i < md.STARS; i++) {
+    // Each star has its own sine phase — not stored per-vertex so we modulate global opacity
+    // Use a global soft pulse for performance (full per-star would require shader)
+    totalOp += 0.5 + Math.sin(t * (1.1 + md.sTwink[i] * 0.8) + md.sTwink[i]) * 0.5;
+  }
+  // Modulate overall star field with a compound sine for sparkle feel
+  md.starPoints.material.opacity = twinkleBase + Math.sin(t * 2.3) * 0.07 + Math.sin(t * 5.1) * 0.04;
+
+  // Dust drifts in desert wind
+  for (let i = 0; i < DUST; i++) {
+    dPos[i*3]   += dSpeeds[i] * 0.8 + Math.sin(t * 0.3 + i * 0.5) * 0.003;
+    dPos[i*3+2] += speed * 0.5;
+    if (dPos[i*3] > camera.position.x + 35) dPos[i*3] = camera.position.x - 35;
+    if (dPos[i*3+2] > camera.position.z + 5) {
+      dPos[i*3]   = (Math.random() - 0.5) * 60 + camera.position.x;
+      dPos[i*3+1] = -1.5 + Math.random() * 1.8;
+      dPos[i*3+2] = camera.position.z - 80;
+    }
+  }
+  md.dustPoints.geometry.attributes.position.needsUpdate = true;
+
+  // Shooting stars
+  md.shootingStars.forEach(function(s) {
+    if (!s.active) {
+      s.nextSpawn -= 1/30;
+      if (s.nextSpawn <= 0) {
+        s.active = true; s.age = 0;
+        s.x  = camera.position.x + (Math.random() - 0.5) * 120;
+        s.y  = 30 + Math.random() * 40;
+        s.z  = camera.position.z - (60 + Math.random() * 150);
+        s.dx = (Math.random() - 0.5) * 0.8;
+        s.dy = -(0.4 + Math.random() * 0.5);
+        s.nextSpawn = 5 + Math.random() * 12;
+      }
+    } else {
+      s.age += 1/30;
+      s.x += s.dx; s.y += s.dy;
+      s.pos[0] = s.x;          s.pos[1] = s.y;          s.pos[2] = s.z;
+      s.pos[3] = s.x - s.dx*8; s.pos[4] = s.y - s.dy*8; s.pos[5] = s.z;
+      s.line.geometry.attributes.position.needsUpdate = true;
+      s.line.material.opacity = Math.sin((s.age / s.maxAge) * Math.PI) * 0.95;
+      if (s.age >= s.maxAge) { s.active = false; s.line.material.opacity = 0; }
+    }
+  });
+
+  // ── Wildlife spawner ───────────────────────────────────────────
+  md.wildlifeTimer += 1/30;
+  if (md.wildlifeTimer >= md.wildlifeInterval) {
+    md.wildlifeTimer = 0;
+    md.wildlifeInterval = 8 + Math.random() * 10;
+    const types = ['roadrunner', 'quail', 'gila'];
+    const pick  = types[Math.floor(Math.random() * types.length)];
+    spawnWildlife(pick, camera.position.x, camera.position.z);
+  }
+
+  // Update active wildlife
+  for (let wi = md.wildlife.length - 1; wi >= 0; wi--) {
+    const w = md.wildlife[wi];
+    w.age += 1/30;
+
+    if (w.type === 'roadrunner') {
+      // Fast dart across scene
+      w.group.position.x += w.vx;
+      w.group.position.z += speed * 0.6;
+      // Leg bob — alternate two leg groups
+      const bob = Math.sin(w.age * 22) * 0.08;
+      if (w.legL) { w.legL.rotation.x =  bob * 1.8; w.legR.rotation.x = -bob * 1.8; }
+      // Tail angle bobs with run
+      if (w.tail) w.tail.rotation.x = -0.4 + Math.sin(w.age * 22) * 0.12;
+      // Head bob
+      if (w.head) w.head.position.y = w.headBaseY + Math.abs(Math.sin(w.age * 22)) * 0.06;
+
+    } else if (w.type === 'quail') {
+      // Slow covey walk
+      w.group.position.x += w.vx * 0.38;
+      w.group.position.z += speed * 0.45;
+      // Each quail bobs independently
+      w.members.forEach(function(m, mi) {
+        m.mesh.position.y = m.baseY + Math.abs(Math.sin(w.age * 6 + mi * 1.1)) * 0.055;
+        if (m.plume) m.plume.rotation.z = Math.sin(w.age * 6 + mi * 1.1) * 0.18;
+      });
+
+    } else if (w.type === 'gila') {
+      // Slow deliberate crawl
+      w.group.position.x += w.vx * 0.12;
+      w.group.position.z += speed * 0.3;
+      // Body undulate
+      if (w.bodyMeshes) {
+        w.bodyMeshes.forEach(function(bm, bi) {
+          bm.position.y = w.bodyBaseY + Math.sin(w.age * 3.5 + bi * 0.8) * 0.04;
+        });
+      }
+      // Leg shuffle
+      if (w.legs) {
+        w.legs.forEach(function(leg, li) {
+          leg.rotation.x = Math.sin(w.age * 3.5 + li * 1.57) * 0.35;
+        });
+      }
+    }
+
+    // Fade in/out at edges of life
+    const fadeIn  = Math.min(1, w.age / 0.4);
+    const fadeOut = Math.max(0, 1 - Math.max(0, w.age - (w.maxAge - 1.5)) / 1.5);
+    const alpha   = fadeIn * fadeOut;
+    w.group.traverse(function(obj) {
+      if (obj.material) obj.material.opacity = alpha * w.baseOpacity;
+    });
+
+    // Remove when expired or out of view
+    if (w.age > w.maxAge || w.group.position.z > camera.position.z + 12) {
+      scene.remove(w.group);
+      w.group.traverse(function(obj) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+      });
+      md.wildlife.splice(wi, 1);
+    }
+  }
+}
+
+// ── Wildlife builder functions ─────────────────────────────────────────────
+
+function spawnWildlife(type, camX, camZ) {
+  const side   = Math.random() < 0.5 ? -1 : 1;
+  const startX = camX + side * (10 + Math.random() * 8);
+  const startZ = camZ - (6 + Math.random() * 12);
+  const vx     = -side * (0.04 + Math.random() * 0.05); // moves toward center then past
+
+  if (type === 'roadrunner') {
+    const group = buildRoadrunner();
+    group.position.set(startX, -1.8, startZ);
+    group.scale.setScalar(0.7 + Math.random() * 0.15);
+    group.rotation.y = side > 0 ? Math.PI : 0;
+    scene.add(group);
+    const w = { type, group, vx, age: 0, maxAge: 14, baseOpacity: 0.88 };
+    // Grab leg/tail/head refs from group children
+    w.legL = group.getObjectByName('legL');
+    w.legR = group.getObjectByName('legR');
+    w.tail = group.getObjectByName('tail');
+    w.head = group.getObjectByName('head');
+    w.headBaseY = w.head ? w.head.position.y : 0;
+    md.wildlife.push(w);
+
+  } else if (type === 'quail') {
+    const count   = 4 + Math.floor(Math.random() * 4);
+    const group   = new THREE.Group();
+    const members = [];
+    for (let q = 0; q < count; q++) {
+      const qMesh  = buildQuail();
+      const spread = (Math.random() - 0.5) * 2.2;
+      const zOff   = (Math.random() - 0.5) * 1.4;
+      qMesh.position.set(spread, 0, zOff);
+      qMesh.scale.setScalar(0.45 + Math.random() * 0.08);
+      qMesh.rotation.y = side > 0 ? Math.PI : 0;
+      group.add(qMesh);
+      members.push({ mesh: qMesh, baseY: 0, plume: qMesh.getObjectByName('plume') });
+    }
+    group.position.set(startX, -1.8, startZ);
+    scene.add(group);
+    md.wildlife.push({ type, group, vx, age: 0, maxAge: 18, baseOpacity: 0.82, members });
+
+  } else if (type === 'gila') {
+    const group = new THREE.Group();
+    const result = buildGila(group);
+    group.position.set(startX, -1.82, startZ);
+    group.scale.setScalar(0.65 + Math.random() * 0.1);
+    group.rotation.y = side > 0 ? Math.PI : 0;
+    scene.add(group);
+    md.wildlife.push({ type, group, vx, age: 0, maxAge: 22, baseOpacity: 0.85,
+      bodyMeshes: result.bodyMeshes, bodyBaseY: result.bodyBaseY, legs: result.legs });
+  }
+}
+
+function buildRoadrunner() {
+  const col = new THREE.MeshBasicMaterial({ color: 0x3a4466, transparent: true, opacity: 0.95, depthWrite: false });
+  const g = new THREE.Group();
+
+  // Body — elongated ellipsoid
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), col.clone());
+  body.scale.set(1.7, 0.7, 0.75);
+  body.position.set(0, 0.28, 0);
+  g.add(body);
+
+  // Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.22, 6), col.clone());
+  neck.position.set(0.32, 0.44, 0);
+  neck.rotation.z = -0.5;
+  g.add(neck);
+
+  // Head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), col.clone());
+  head.position.set(0.44, 0.56, 0);
+  head.name = 'head';
+  g.add(head);
+
+  // Beak
+  const beak = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.01, 0.2, 5), col.clone());
+  beak.rotation.z = -Math.PI / 2;
+  beak.position.set(0.62, 0.57, 0);
+  g.add(beak);
+
+  // Crest
+  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.14, 4), col.clone());
+  crest.position.set(0.38, 0.70, 0);
+  crest.rotation.z = -0.3;
+  g.add(crest);
+
+  // Tail — angled upward
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 0.38, 5), col.clone());
+  tail.rotation.z = Math.PI / 2 - 0.4;
+  tail.position.set(-0.48, 0.42, 0);
+  tail.name = 'tail';
+  g.add(tail);
+
+  // Legs
+  const legL = new THREE.Group(); legL.name = 'legL';
+  const legR = new THREE.Group(); legR.name = 'legR';
+  [[legL, -0.06], [legR, 0.06]].forEach(function(pair) {
+    const leg = pair[0], zo = pair[1];
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.2, 5), col.clone());
+    upper.position.set(0.05, -0.1, zo);
+    leg.add(upper);
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.02, 0.18, 5), col.clone());
+    lower.position.set(0.05, -0.28, zo);
+    leg.add(lower);
+    leg.position.set(-0.02, 0.18, zo);
+    g.add(leg);
+  });
+  g.add(legL); g.add(legR);
+
+  return g;
+}
+
+function buildQuail() {
+  const col = new THREE.MeshBasicMaterial({ color: 0x2e3a55, transparent: true, opacity: 0.95, depthWrite: false });
+  const g   = new THREE.Group();
+
+  // Round body
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), col.clone());
+  body.scale.set(1, 0.78, 0.8);
+  body.position.set(0, 0.32, 0);
+  g.add(body);
+
+  // Small head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 7, 6), col.clone());
+  head.position.set(0.26, 0.56, 0);
+  g.add(head);
+
+  // Beak
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.1, 4), col.clone());
+  beak.rotation.z = -Math.PI / 2;
+  beak.position.set(0.38, 0.56, 0);
+  g.add(beak);
+
+  // Topknot plume — teardrop shaped
+  const plume = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), col.clone());
+  plume.scale.set(0.6, 1.6, 0.6);
+  plume.position.set(0.18, 0.76, 0);
+  plume.name = 'plume';
+  g.add(plume);
+
+  // Stubby tail
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 5), col.clone());
+  tail.rotation.z = Math.PI / 2 + 0.3;
+  tail.position.set(-0.3, 0.3, 0);
+  g.add(tail);
+
+  // Tiny legs
+  [[-0.05], [0.05]].forEach(function(pair) {
+    const zo = pair[0];
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.22, 5), col.clone());
+    leg.position.set(0, 0.11, zo);
+    g.add(leg);
+  });
+
+  return g;
+}
+
+function buildGila(g) {
+  const col = new THREE.MeshBasicMaterial({ color: 0x283244, transparent: true, opacity: 0.95, depthWrite: false });
+  const bodyMeshes = [];
+  const legs = [];
+  const SEG = 5;
+
+  // Segmented body
+  for (let s = 0; s < SEG; s++) {
+    const r   = s === 0 ? 0.08 : (s === SEG-1 ? 0.06 : 0.12 - s * 0.008);
+    const seg = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), col.clone());
+    seg.scale.set(1.6, 0.55, 0.9);
+    seg.position.set((s - SEG/2 + 0.5) * 0.22, 0.08, 0);
+    g.add(seg);
+    bodyMeshes.push(seg);
+  }
+
+  // Head (first segment extra)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 5), col.clone());
+  head.scale.set(1.4, 0.7, 0.85);
+  head.position.set(SEG/2 * 0.22 - 0.05, 0.09, 0);
+  g.add(head);
+
+  // Snout
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.1, 5), col.clone());
+  snout.rotation.z = Math.PI / 2;
+  snout.position.set(SEG/2 * 0.22 + 0.1, 0.09, 0);
+  g.add(snout);
+
+  // Thick tail
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), col.clone());
+  tail.scale.set(1.8, 0.5, 0.7);
+  tail.position.set(-(SEG/2) * 0.22 - 0.18, 0.08, 0);
+  g.add(tail);
+
+  // 4 stubby legs
+  const legXs = [-0.28, -0.06, 0.16, 0.38];
+  const legSides = [-1, 1];
+  legXs.forEach(function(lx) {
+    legSides.forEach(function(ls) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.12, 5), col.clone());
+      leg.rotation.z = ls * 0.6;
+      leg.position.set(lx, 0.02, ls * 0.14);
+      g.add(leg);
+      legs.push(leg);
+    });
+  });
+
+  return { bodyMeshes, bodyBaseY: 0.08, legs };
+}
+
+// ============================================================
+// MODE 10 — THUNDERSTORM
+// ============================================================
+
+function initStorm() {
+  camera.position.set(0, 4, 0);
+  camera.rotation.set(0, 0, 0);
+  scene.fog = new THREE.FogExp2(0x010409, 0.012);
+  renderer.setClearColor(0x010409, 1);
+
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(600,16,16),
+    new THREE.MeshBasicMaterial({ color: 0x000205, side: THREE.BackSide })
+  ));
+
+  const groundGeo = new THREE.PlaneGeometry(600,600); groundGeo.rotateX(-Math.PI/2);
+  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x00010a })));
+
+  for (let h = 0; h < 8; h++) {
+    const W = 80+Math.random()*120, H = 5+Math.random()*12;
+    const geo = new THREE.SphereGeometry(W*0.5,16,8);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x000108 }));
+    mesh.scale.set(1, H/(W*0.5), 0.22);
+    mesh.position.set((Math.random()-0.5)*300, -H*0.48+1.5, -(120+Math.random()*280));
+    scene.add(mesh);
+  }
+
+  const clouds = [];
+  for (let c = 0; c < 24; c++) {
+    const W = 40+Math.random()*70, H = 8+Math.random()*18;
+    const geo = new THREE.PlaneGeometry(W, H, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color().setHSL(0.6, 0.15, 0.04+Math.random()*0.06),
+      transparent: true, opacity: 0.75+Math.random()*0.2, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((Math.random()-0.5)*160, 12+Math.random()*22, -(20+Math.random()*220));
+    mesh.rotation.x = (Math.random()-0.5)*0.3; mesh.rotation.y = (Math.random()-0.5)*0.4;
+    scene.add(mesh);
+    clouds.push({ mesh, speed: 0.008+Math.random()*0.012, phase: Math.random()*Math.PI*2 });
+  }
+
+  const cloudGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(45,12,10),
+    new THREE.MeshBasicMaterial({ color: 0x8899ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  cloudGlow.position.set(0,22,-80);
+  scene.add(cloudGlow);
+
+  const RAIN = 3500;
+  const rPos = new Float32Array(RAIN*2*3);
+  const rSpd = new Float32Array(RAIN);
+  for (let i = 0; i < RAIN; i++) {
+    const x=(Math.random()-0.5)*70, y=(Math.random()-0.5)*30, z=-(Math.random()*80), len=0.3+Math.random()*0.5;
+    rPos[i*6]=x; rPos[i*6+1]=y; rPos[i*6+2]=z;
+    rPos[i*6+3]=x; rPos[i*6+4]=y-len; rPos[i*6+5]=z;
+    rSpd[i]=0.18+Math.random()*0.22;
+  }
+  const rGeo = new THREE.BufferGeometry();
+  rGeo.setAttribute('position', new THREE.BufferAttribute(rPos, 3));
+  const rain = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({
+    color: 0x8899bb, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending,
+  }));
+  scene.add(rain);
+
+  const bolts = [];
+  for (let b = 0; b < 5; b++) {
+    const SEG=10, bPos=new Float32Array(SEG*2*3);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
+    const line=new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: 0xccddff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    }));
+    scene.add(line);
+    bolts.push({ line, bPos, SEG, active: false, age:0, maxAge:0.18+Math.random()*0.12, nextSpawn: 2+Math.random()*6 });
+  }
+
+  const DEBRIS=600;
+  const debPos=new Float32Array(DEBRIS*3), debSpd=new Float32Array(DEBRIS);
+  for (let i = 0; i < DEBRIS; i++) {
+    debPos[i*3]=(Math.random()-0.5)*60; debPos[i*3+1]=1+Math.random()*10; debPos[i*3+2]=-(Math.random()*70);
+    debSpd[i]=0.03+Math.random()*0.06;
+  }
+  const debGeo=new THREE.BufferGeometry();
+  debGeo.setAttribute('position', new THREE.BufferAttribute(debPos, 3));
+  const debris=new THREE.Points(debGeo, new THREE.PointsMaterial({
+    color: 0x445566, size: 0.08, transparent: true, opacity: 0.55, depthWrite: false,
+  }));
+  scene.add(debris);
+
+  md.clouds=clouds; md.cloudGlow=cloudGlow;
+  md.rain=rain; md.rPos=rPos; md.rSpd=rSpd; md.RAIN=RAIN;
+  md.bolts=bolts; md.debris=debris; md.debPos=debPos; md.debSpd=debSpd; md.DEBRIS=DEBRIS;
+  md.flashIntensity=0; md.camZ=0;
+}
+
+function updateStorm(t) {
+  const { rPos, rSpd, RAIN, debPos, debSpd, DEBRIS } = md;
+  const speed = 0.025;
+  md.camZ -= speed;
+  camera.position.z = md.camZ;
+  camera.position.x += (mouseNX*2 - camera.position.x)*0.01;
+  camera.position.y += (4-mouseNY*1.5 - camera.position.y)*0.01;
+  camera.lookAt(camera.position.x*0.05, 2, camera.position.z-12);
+
+  md.flashIntensity *= 0.82;
+  renderer.setClearColor(new THREE.Color(0x010409).lerp(new THREE.Color(0x3344aa), md.flashIntensity*0.18), 1);
+  md.cloudGlow.position.z = camera.position.z-80;
+  md.cloudGlow.material.opacity = md.flashIntensity*0.22;
+
+  md.clouds.forEach(function(c) {
+    c.mesh.position.x += c.speed;
+    c.mesh.position.z += speed*0.25;
+    if (c.mesh.position.z > camera.position.z+12) c.mesh.position.z -= 245;
+    c.mesh.material.opacity = 0.7+Math.sin(t*0.15+c.phase)*0.12;
+  });
+
+  md.bolts.forEach(function(b) {
+    if (!b.active) {
+      b.nextSpawn -= 1/30;
+      if (b.nextSpawn <= 0) {
+        b.active=true; b.age=0;
+        const startX=camera.position.x+(Math.random()-0.5)*80;
+        const startZ=camera.position.z-(30+Math.random()*100);
+        let cx=startX, cy=28, cz=startZ;
+        for (let s = 0; s < b.SEG; s++) {
+          const nx=cx+(Math.random()-0.5)*4, ny=cy-(28/b.SEG)*(1+Math.random()*0.5);
+          b.bPos[s*6]=cx; b.bPos[s*6+1]=cy; b.bPos[s*6+2]=cz;
+          b.bPos[s*6+3]=nx; b.bPos[s*6+4]=ny; b.bPos[s*6+5]=cz;
+          cx=nx; cy=ny;
+        }
+        b.line.geometry.attributes.position.needsUpdate=true;
+        b.nextSpawn=2.5+Math.random()*7;
+        md.flashIntensity=0.8+Math.random()*0.2;
+        md.cloudGlow.position.x=startX;
+      }
+    } else {
+      b.age += 1/30;
+      b.line.material.opacity = (Math.sin(b.age*80)>0?1:0)*(1-b.age/b.maxAge)*0.95;
+      if (b.age >= b.maxAge) { b.active=false; b.line.material.opacity=0; }
+    }
+  });
+
+  for (let i = 0; i < RAIN; i++) {
+    rPos[i*6+1]-=rSpd[i]; rPos[i*6+4]-=rSpd[i];
+    rPos[i*6]+=0.012; rPos[i*6+3]+=0.012;
+    rPos[i*6+2]+=speed*0.6; rPos[i*6+5]+=speed*0.6;
+    if (rPos[i*6+1] < camera.position.y-18 || rPos[i*6+2] > camera.position.z+6) {
+      const nx=camera.position.x+(Math.random()-0.5)*70, ny=camera.position.y+14, nz=camera.position.z-Math.random()*80, len=0.3+Math.random()*0.5;
+      rPos[i*6]=nx; rPos[i*6+1]=ny; rPos[i*6+2]=nz; rPos[i*6+3]=nx; rPos[i*6+4]=ny-len; rPos[i*6+5]=nz;
+    }
+  }
+  md.rain.geometry.attributes.position.needsUpdate = true;
+
+  for (let i = 0; i < DEBRIS; i++) {
+    debPos[i*3]  +=debSpd[i]+Math.sin(t*0.4+i*0.9)*0.008;
+    debPos[i*3+1]+=Math.sin(t*0.3+i*1.2)*0.008;
+    debPos[i*3+2]+=speed*0.5;
+    if (debPos[i*3] > camera.position.x+40 || debPos[i*3+2] > camera.position.z+6) {
+      debPos[i*3]=camera.position.x-40; debPos[i*3+1]=1+Math.random()*10; debPos[i*3+2]=camera.position.z-70;
+    }
+  }
+  md.debris.geometry.attributes.position.needsUpdate = true;
+}
 
 document.querySelectorAll('.mode-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
