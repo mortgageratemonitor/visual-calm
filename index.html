@@ -69,6 +69,28 @@
     box-shadow: 0 0 6px rgba(160,120,255,0.7);
   }
   #pulse-toggle.on { color: rgba(255,255,255,0.38); }
+
+  #storm-toggle {
+    position: fixed; bottom: 38px; left: 42px;
+    font-family: 'Cormorant Garamond', serif; font-size: 10px; font-weight: 300;
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: rgba(255,255,255,0.22); background: none; border: none;
+    padding: 7px 13px; border-radius: 100px; cursor: pointer;
+    display: none; align-items: center; gap: 7px;
+    transition: color 0.4s ease, opacity 0.8s ease;
+    z-index: 10; opacity: 0;
+  }
+  #storm-toggle:hover { color: rgba(255,255,255,0.55); }
+  #storm-toggle .pip {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(255,255,255,0.2);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+  }
+  #storm-toggle.on .pip {
+    background: rgba(100,160,255,0.85);
+    box-shadow: 0 0 6px rgba(100,160,255,0.7);
+  }
+  #storm-toggle.on { color: rgba(255,255,255,0.38); }
 </style>
 </head>
 <body>
@@ -92,6 +114,10 @@
   <span class="pip"></span>pulse
 </button>
 
+<button id="storm-toggle" class="on">
+  <span class="pip"></span>storm
+</button>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js">
 </script>
 <script>
@@ -101,6 +127,32 @@
 
 const pulseToggleEl = document.getElementById('pulse-toggle');
 let pulseEnabled = true;
+
+const stormToggleEl = document.getElementById('storm-toggle');
+let stormHeavy = true; // true = heavy lightning, false = calm
+
+stormToggleEl.addEventListener('click', function() {
+  stormHeavy = !stormHeavy;
+  stormToggleEl.classList.toggle('on', stormHeavy);
+  stormToggleEl.querySelector('.pip').style.background = stormHeavy
+    ? 'rgba(100,160,255,0.85)' : 'rgba(255,255,255,0.2)';
+  // Reset all bolt timers to new interval range immediately
+  if (md.bolts) {
+    md.bolts.forEach(function(b) {
+      b.nextSpawn = stormHeavy
+        ? 1.5 + Math.random() * 5
+        : 12  + Math.random() * 18;
+    });
+  }
+  if (md.horizonGlows) {
+    md.horizonGlows.forEach(function(hg) {
+      hg.nextFlash = stormHeavy
+        ? 3  + Math.random() * 8
+        : 18 + Math.random() * 22;
+    });
+  }
+  revealUI();
+});
 
 pulseToggleEl.addEventListener('click', function() {
   pulseEnabled = !pulseEnabled;
@@ -1986,76 +2038,164 @@ function buildGila(g) {
 function initStorm() {
   camera.position.set(0, 4, 0);
   camera.rotation.set(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x010409, 0.012);
-  renderer.setClearColor(0x010409, 1);
+  scene.fog = new THREE.FogExp2(0x010508, 0.010);
+  renderer.setClearColor(0x010508, 1);
 
+  // Background sphere
   scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(600,16,16),
     new THREE.MeshBasicMaterial({ color: 0x000205, side: THREE.BackSide })
   ));
 
+  // Ground
   const groundGeo = new THREE.PlaneGeometry(600,600); groundGeo.rotateX(-Math.PI/2);
-  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x00010a })));
+  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x01020c })));
 
+  // Distant hill silhouettes
   for (let h = 0; h < 8; h++) {
-    const W = 80+Math.random()*120, H = 5+Math.random()*12;
-    const geo = new THREE.SphereGeometry(W*0.5,16,8);
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x000108 }));
+    const W=80+Math.random()*120, H=5+Math.random()*12;
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(W*0.5,16,8),
+      new THREE.MeshBasicMaterial({ color: 0x000108 })
+    );
     mesh.scale.set(1, H/(W*0.5), 0.22);
     mesh.position.set((Math.random()-0.5)*300, -H*0.48+1.5, -(120+Math.random()*280));
     scene.add(mesh);
   }
 
-  const clouds = [];
-  for (let c = 0; c < 24; c++) {
-    const W = 40+Math.random()*70, H = 8+Math.random()*18;
-    const geo = new THREE.PlaneGeometry(W, H, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color().setHSL(0.6, 0.15, 0.04+Math.random()*0.06),
-      transparent: true, opacity: 0.75+Math.random()*0.2, side: THREE.DoubleSide, depthWrite: false,
+  // [5] Ground puddle reflections — 5 shimmering planes at ground level
+  const puddles = [];
+  for (let p = 0; p < 5; p++) {
+    const pw = 4+Math.random()*8, pd = 2+Math.random()*4;
+    const pGeo = new THREE.PlaneGeometry(pw, pd);
+    pGeo.rotateX(-Math.PI/2);
+    const pMat = new THREE.MeshBasicMaterial({
+      color: 0x334466, transparent: true, opacity: 0.0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((Math.random()-0.5)*160, 12+Math.random()*22, -(20+Math.random()*220));
-    mesh.rotation.x = (Math.random()-0.5)*0.3; mesh.rotation.y = (Math.random()-0.5)*0.4;
-    scene.add(mesh);
-    clouds.push({ mesh, speed: 0.008+Math.random()*0.012, phase: Math.random()*Math.PI*2 });
+    const pMesh = new THREE.Mesh(pGeo, pMat);
+    pMesh.position.set(
+      (Math.random()-0.5)*30,
+      0.05,
+      -(3+Math.random()*35)
+    );
+    scene.add(pMesh);
+    puddles.push({ mesh: pMesh, baseX: pMesh.position.x, baseZ: pMesh.position.z });
   }
 
-  const cloudGlow = new THREE.Mesh(
-    new THREE.SphereGeometry(45,12,10),
-    new THREE.MeshBasicMaterial({ color: 0x8899ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
-  );
-  cloudGlow.position.set(0,22,-80);
-  scene.add(cloudGlow);
+  // [1] Volumetric cloud layers — 3 depth layers with different sizes/speeds/opacity
+  const clouds = [];
+  const cloudLayers = [
+    { count:10, yRange:[28,40], zRange:[150,350], wScale:2.2, hScale:1.8, baseOp:0.55, speed:0.004, lum:0.035 }, // far — huge, diffuse
+    { count:12, yRange:[18,30], zRange:[60, 150], wScale:1.4, hScale:1.2, baseOp:0.72, speed:0.008, lum:0.048 }, // mid
+    { count: 8, yRange:[10,22], zRange:[15,  60], wScale:0.9, hScale:0.8, baseOp:0.82, speed:0.013, lum:0.060 }, // near — darker, sharper
+  ];
 
-  const RAIN = 3500;
-  const rPos = new Float32Array(RAIN*2*3);
-  const rSpd = new Float32Array(RAIN);
-  for (let i = 0; i < RAIN; i++) {
-    const x=(Math.random()-0.5)*70, y=(Math.random()-0.5)*30, z=-(Math.random()*80), len=0.3+Math.random()*0.5;
-    rPos[i*6]=x; rPos[i*6+1]=y; rPos[i*6+2]=z;
-    rPos[i*6+3]=x; rPos[i*6+4]=y-len; rPos[i*6+5]=z;
-    rSpd[i]=0.18+Math.random()*0.22;
-  }
-  const rGeo = new THREE.BufferGeometry();
-  rGeo.setAttribute('position', new THREE.BufferAttribute(rPos, 3));
-  const rain = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({
-    color: 0x8899bb, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending,
-  }));
-  scene.add(rain);
+  cloudLayers.forEach(function(layer, li) {
+    for (let c = 0; c < layer.count; c++) {
+      const W = (35+Math.random()*55)*layer.wScale;
+      const H = (6+Math.random()*14)*layer.hScale;
+      // Each cloud is 3 overlapping planes for volume
+      for (let sub = 0; sub < 3; sub++) {
+        const geo = new THREE.PlaneGeometry(W*(0.8+sub*0.15), H*(0.7+sub*0.2), 6, 6);
+        const lum = layer.lum + sub*0.01 + Math.random()*0.015;
+        const mat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color().setHSL(0.60, 0.18, lum),
+          transparent: true, opacity: layer.baseOp - sub*0.12,
+          side: THREE.DoubleSide, depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        const zMin=layer.zRange[0], zMax=layer.zRange[1];
+        mesh.position.set(
+          (Math.random()-0.5)*180,
+          layer.yRange[0]+Math.random()*(layer.yRange[1]-layer.yRange[0]) + sub*1.5,
+          -(zMin+Math.random()*(zMax-zMin))
+        );
+        mesh.rotation.x = (Math.random()-0.5)*0.25 + sub*0.08;
+        mesh.rotation.y = (Math.random()-0.5)*0.5;
+        scene.add(mesh);
+        clouds.push({ mesh, speed: layer.speed*(0.8+Math.random()*0.4), phase: Math.random()*Math.PI*2, layer: li, baseOp: layer.baseOp - sub*0.12 });
+      }
+    }
+  });
 
+  // [2] Close lightning bolts — brighter, faster flicker, secondary branch
   const bolts = [];
-  for (let b = 0; b < 5; b++) {
-    const SEG=10, bPos=new Float32Array(SEG*2*3);
+  for (let b = 0; b < 6; b++) {
+    const SEG=14;
+    const bPos=new Float32Array(SEG*2*3);
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
     const line=new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
-      color: 0xccddff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+      color: 0xddeeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
     }));
     scene.add(line);
-    bolts.push({ line, bPos, SEG, active: false, age:0, maxAge:0.18+Math.random()*0.12, nextSpawn: 2+Math.random()*6 });
+    // Branch bolt
+    const branchPos=new Float32Array(6*2*3);
+    const branchGeo=new THREE.BufferGeometry();
+    branchGeo.setAttribute('position', new THREE.BufferAttribute(branchPos, 3));
+    const branch=new THREE.LineSegments(branchGeo, new THREE.LineBasicMaterial({
+      color: 0xaabbdd, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    }));
+    scene.add(branch);
+    bolts.push({ line, bPos, SEG, branch, branchPos,
+      active:false, age:0, maxAge:0.22+Math.random()*0.1,
+      nextSpawn: 1.5+Math.random()*5 });
   }
 
+  // [4] Distant horizon lightning — cloud glow only, no bolt visible
+  const horizonGlows = [];
+  for (let hg = 0; hg < 4; hg++) {
+    const gMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(55+Math.random()*30, 10, 8),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(0.60+Math.random()*0.08, 0.6, 0.5),
+        transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      })
+    );
+    gMesh.position.set(
+      (Math.random()-0.5)*200,
+      25+Math.random()*20,
+      -(180+Math.random()*220)
+    );
+    scene.add(gMesh);
+    horizonGlows.push({
+      mesh: gMesh, intensity: 0,
+      nextFlash: 3+Math.random()*8,
+      baseX: gMesh.position.x, baseZ: gMesh.position.z,
+    });
+  }
+
+  // Main cloud glow (near lightning illumination)
+  const cloudGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(60,12,10),
+    new THREE.MeshBasicMaterial({ color: 0x8899ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  cloudGlow.position.set(0,25,-80);
+  scene.add(cloudGlow);
+
+  // [3] Rain — larger pool, wind angle stored per-drop for squall variation
+  const RAIN = 5000;
+  const rPos = new Float32Array(RAIN*2*3);
+  const rSpd = new Float32Array(RAIN);
+  const rLen = new Float32Array(RAIN);
+  for (let i = 0; i < RAIN; i++) {
+    const x=(Math.random()-0.5)*80, y=(Math.random()-0.5)*35, z=-(Math.random()*90);
+    const len=0.25+Math.random()*0.55;
+    rPos[i*6]=x; rPos[i*6+1]=y;     rPos[i*6+2]=z;
+    rPos[i*6+3]=x; rPos[i*6+4]=y-len; rPos[i*6+5]=z;
+    rSpd[i]=0.20+Math.random()*0.25;
+    rLen[i]=len;
+  }
+  const rGeo=new THREE.BufferGeometry();
+  rGeo.setAttribute('position', new THREE.BufferAttribute(rPos, 3));
+  const rain=new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({
+    color: 0x7788aa, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending,
+  }));
+  scene.add(rain);
+
+  // Debris
   const DEBRIS=600;
   const debPos=new Float32Array(DEBRIS*3), debSpd=new Float32Array(DEBRIS);
   for (let i = 0; i < DEBRIS; i++) {
@@ -2070,13 +2210,19 @@ function initStorm() {
   scene.add(debris);
 
   md.clouds=clouds; md.cloudGlow=cloudGlow;
-  md.rain=rain; md.rPos=rPos; md.rSpd=rSpd; md.RAIN=RAIN;
-  md.bolts=bolts; md.debris=debris; md.debPos=debPos; md.debSpd=debSpd; md.DEBRIS=DEBRIS;
-  md.flashIntensity=0; md.camZ=0;
+  md.puddles=puddles;
+  md.horizonGlows=horizonGlows;
+  md.rain=rain; md.rPos=rPos; md.rSpd=rSpd; md.rLen=rLen; md.RAIN=RAIN;
+  md.bolts=bolts;
+  md.debris=debris; md.debPos=debPos; md.debSpd=debSpd; md.DEBRIS=DEBRIS;
+  md.flashIntensity=0;
+  // [3] Squall state
+  md.squallIntensity=1.0; md.squallTimer=0; md.squallInterval=8+Math.random()*12;
+  md.camZ=0;
 }
 
 function updateStorm(t) {
-  const { rPos, rSpd, RAIN, debPos, debSpd, DEBRIS } = md;
+  const { rPos, rSpd, rLen, RAIN, debPos, debSpd, DEBRIS } = md;
   const speed = 0.025;
   md.camZ -= speed;
   camera.position.z = md.camZ;
@@ -2084,64 +2230,143 @@ function updateStorm(t) {
   camera.position.y += (4-mouseNY*1.5 - camera.position.y)*0.01;
   camera.lookAt(camera.position.x*0.05, 2, camera.position.z-12);
 
-  md.flashIntensity *= 0.82;
-  renderer.setClearColor(new THREE.Color(0x010409).lerp(new THREE.Color(0x3344aa), md.flashIntensity*0.18), 1);
-  md.cloudGlow.position.z = camera.position.z-80;
-  md.cloudGlow.material.opacity = md.flashIntensity*0.22;
+  // [2] Flash decay — faster decay, secondary flicker
+  md.flashIntensity *= 0.78;
+  const flickerBoost = md.flashIntensity > 0.1 ? Math.random() * md.flashIntensity * 0.3 : 0;
+  const fi = Math.min(1, md.flashIntensity + flickerBoost);
+  renderer.setClearColor(
+    new THREE.Color(0x010508).lerp(new THREE.Color(0x4455bb), fi * 0.28), 1
+  );
+  md.cloudGlow.position.z = camera.position.z - 80;
+  md.cloudGlow.material.opacity = fi * 0.35;
 
-  md.clouds.forEach(function(c) {
-    c.mesh.position.x += c.speed;
-    c.mesh.position.z += speed*0.25;
-    if (c.mesh.position.z > camera.position.z+12) c.mesh.position.z -= 245;
-    c.mesh.material.opacity = 0.7+Math.sin(t*0.15+c.phase)*0.12;
+  // [5] Puddle reflections brighten with flash
+  md.puddles.forEach(function(p) {
+    p.mesh.position.z = p.baseZ + camera.position.z;
+    p.mesh.material.opacity = 0.06 + fi * 0.45 + Math.sin(t*1.8+p.baseX)*0.03;
+    p.mesh.material.color.setHSL(0.60, 0.5, 0.15 + fi * 0.35);
   });
 
+  // [1] Volumetric clouds — scroll with parallax by layer
+  md.clouds.forEach(function(c) {
+    const layerSpeed = c.speed * (1 + c.layer * 0.5);
+    c.mesh.position.x += layerSpeed;
+    c.mesh.position.z += speed * (0.18 + c.layer * 0.08);
+    const wrap = 250 - c.layer * 60;
+    if (c.mesh.position.z > camera.position.z + 14) c.mesh.position.z -= wrap;
+    // [2] Flash illuminates clouds — brighter near lightning strike
+    const flashLift = fi * 0.08;
+    c.mesh.material.opacity = c.baseOp + flashLift + Math.sin(t*0.12+c.phase)*0.06;
+  });
+
+  // [2] Lightning bolts — brighter, secondary branch, stronger flash
   md.bolts.forEach(function(b) {
     if (!b.active) {
       b.nextSpawn -= 1/30;
       if (b.nextSpawn <= 0) {
         b.active=true; b.age=0;
-        const startX=camera.position.x+(Math.random()-0.5)*80;
-        const startZ=camera.position.z-(30+Math.random()*100);
-        let cx=startX, cy=28, cz=startZ;
-        for (let s = 0; s < b.SEG; s++) {
-          const nx=cx+(Math.random()-0.5)*4, ny=cy-(28/b.SEG)*(1+Math.random()*0.5);
+        const startX=camera.position.x+(Math.random()-0.5)*70;
+        const startZ=camera.position.z-(25+Math.random()*80);
+        let cx=startX, cy=30, cz=startZ;
+        // Main bolt — more jagged segments
+        for (let s=0; s<b.SEG; s++) {
+          const nx=cx+(Math.random()-0.5)*5, ny=cy-(30/b.SEG)*(1+Math.random()*0.6);
           b.bPos[s*6]=cx; b.bPos[s*6+1]=cy; b.bPos[s*6+2]=cz;
           b.bPos[s*6+3]=nx; b.bPos[s*6+4]=ny; b.bPos[s*6+5]=cz;
           cx=nx; cy=ny;
         }
         b.line.geometry.attributes.position.needsUpdate=true;
-        b.nextSpawn=2.5+Math.random()*7;
-        md.flashIntensity=0.8+Math.random()*0.2;
-        md.cloudGlow.position.x=startX;
+        b.line.material.color.setHSL(0.60+Math.random()*0.08, 0.4, 0.92);
+
+        // Branch off midpoint
+        const midSeg=Math.floor(b.SEG*0.4);
+        const bx=b.bPos[midSeg*6+3], by=b.bPos[midSeg*6+4];
+        let bx2=bx, by2=by;
+        for (let s=0; s<6; s++) {
+          const nx2=bx2+(Math.random()-0.5)*4, ny2=by2-(12/6)*(1+Math.random()*0.5);
+          b.branchPos[s*6]=bx2; b.branchPos[s*6+1]=by2; b.branchPos[s*6+2]=cz;
+          b.branchPos[s*6+3]=nx2; b.branchPos[s*6+4]=ny2; b.branchPos[s*6+5]=cz;
+          bx2=nx2; by2=ny2;
+        }
+        b.branch.geometry.attributes.position.needsUpdate=true;
+
+        b.nextSpawn=2+Math.random()*6;
+        // Strong flash with secondary pulse
+        md.flashIntensity=0.9+Math.random()*0.1;
+        md.cloudGlow.position.set(startX, 25, startZ);
+        setTimeout(function() { md.flashIntensity=Math.max(md.flashIntensity, 0.5+Math.random()*0.3); }, 80);
       }
     } else {
       b.age += 1/30;
-      b.line.material.opacity = (Math.sin(b.age*80)>0?1:0)*(1-b.age/b.maxAge)*0.95;
-      if (b.age >= b.maxAge) { b.active=false; b.line.material.opacity=0; }
+      const flicker=(Math.sin(b.age*90)>0?1:0.2);
+      const fade=1-b.age/b.maxAge;
+      b.line.material.opacity   = flicker*fade*1.0;
+      b.branch.material.opacity = flicker*fade*0.55;
+      if (b.age>=b.maxAge) {
+        b.active=false;
+        b.line.material.opacity=0;
+        b.branch.material.opacity=0;
+      }
     }
   });
 
-  for (let i = 0; i < RAIN; i++) {
-    rPos[i*6+1]-=rSpd[i]; rPos[i*6+4]-=rSpd[i];
-    rPos[i*6]+=0.012; rPos[i*6+3]+=0.012;
-    rPos[i*6+2]+=speed*0.6; rPos[i*6+5]+=speed*0.6;
-    if (rPos[i*6+1] < camera.position.y-18 || rPos[i*6+2] > camera.position.z+6) {
-      const nx=camera.position.x+(Math.random()-0.5)*70, ny=camera.position.y+14, nz=camera.position.z-Math.random()*80, len=0.3+Math.random()*0.5;
-      rPos[i*6]=nx; rPos[i*6+1]=ny; rPos[i*6+2]=nz; rPos[i*6+3]=nx; rPos[i*6+4]=ny-len; rPos[i*6+5]=nz;
+  // [4] Distant horizon lightning — internal cloud glow, no bolt
+  md.horizonGlows.forEach(function(hg) {
+    if (hg.intensity > 0) {
+      hg.intensity *= 0.88;
+      hg.mesh.material.opacity = hg.intensity * 0.18;
+      hg.mesh.position.z += speed * 0.15;
+    } else {
+      hg.nextFlash -= 1/30;
+      if (hg.nextFlash <= 0) {
+        hg.intensity   = 0.7+Math.random()*0.3;
+        hg.nextFlash   = 4+Math.random()*10;
+        hg.mesh.position.z = hg.baseZ + camera.position.z;
+        hg.mesh.position.x = hg.baseX + camera.position.x;
+        // Secondary flicker after short delay
+        setTimeout(function() { hg.intensity = Math.max(hg.intensity, 0.4+Math.random()*0.3); }, 120);
+      }
+    }
+    if (hg.mesh.position.z > camera.position.z+12) hg.mesh.position.z = camera.position.z-350;
+  });
+
+  // [3] Squall system — rain intensity and angle pulse
+  md.squallTimer += 1/30;
+  if (md.squallTimer > md.squallInterval) {
+    md.squallTimer    = 0;
+    md.squallInterval = 7+Math.random()*12;
+    md.squallIntensity = 1.5+Math.random()*1.0; // burst of intensity
+    setTimeout(function() { md.squallIntensity = 0.6+Math.random()*0.5; }, 2500); // ease back
+    setTimeout(function() { md.squallIntensity = 1.0; }, 5500);
+  }
+  const windAngle  = 0.012 * md.squallIntensity;
+  const rainOpacity= 0.30 * md.squallIntensity;
+  md.rain.material.opacity = Math.min(0.75, rainOpacity + fi*0.12);
+
+  for (let i=0; i<RAIN; i++) {
+    const spd = rSpd[i] * md.squallIntensity;
+    rPos[i*6+1] -= spd; rPos[i*6+4] -= spd;
+    rPos[i*6]   += windAngle; rPos[i*6+3] += windAngle;
+    rPos[i*6+2] += speed*0.6; rPos[i*6+5] += speed*0.6;
+    if (rPos[i*6+1] < camera.position.y-20 || rPos[i*6+2] > camera.position.z+6) {
+      const nx=camera.position.x+(Math.random()-0.5)*80;
+      const ny=camera.position.y+16;
+      const nz=camera.position.z-Math.random()*90;
+      rPos[i*6]=nx; rPos[i*6+1]=ny; rPos[i*6+2]=nz;
+      rPos[i*6+3]=nx; rPos[i*6+4]=ny-rLen[i]; rPos[i*6+5]=nz;
     }
   }
-  md.rain.geometry.attributes.position.needsUpdate = true;
+  md.rain.geometry.attributes.position.needsUpdate=true;
 
-  for (let i = 0; i < DEBRIS; i++) {
+  for (let i=0; i<DEBRIS; i++) {
     debPos[i*3]  +=debSpd[i]+Math.sin(t*0.4+i*0.9)*0.008;
     debPos[i*3+1]+=Math.sin(t*0.3+i*1.2)*0.008;
     debPos[i*3+2]+=speed*0.5;
-    if (debPos[i*3] > camera.position.x+40 || debPos[i*3+2] > camera.position.z+6) {
+    if (debPos[i*3]>camera.position.x+40 || debPos[i*3+2]>camera.position.z+6) {
       debPos[i*3]=camera.position.x-40; debPos[i*3+1]=1+Math.random()*10; debPos[i*3+2]=camera.position.z-70;
     }
   }
-  md.debris.geometry.attributes.position.needsUpdate = true;
+  md.debris.geometry.attributes.position.needsUpdate=true;
 }
 
 document.querySelectorAll('.mode-btn').forEach(function(btn) {
