@@ -1523,6 +1523,11 @@ function initDesert() {
   md.wildlife = [];
   md.wildlifeTimer = 0;
   md.wildlifeInterval = 2; // first spawn fast, subsequent ones random
+
+  // Force one of each immediately for visibility testing
+  spawnWildlife('roadrunner', 0, -5);
+  spawnWildlife('quail',      4, -8);
+  spawnWildlife('gila',      -4, -11);
 }
 
 function updateDesert(t) {
@@ -1699,7 +1704,7 @@ function updateDesert(t) {
     });
 
     // Remove when expired or out of view
-    if (w.age > w.maxAge || w.group.position.z > camera.position.z + 12) {
+    if (w.age > w.maxAge || w.group.position.z > camera.position.z + 18) {
       scene.remove(w.group);
       w.group.traverse(function(obj) {
         if (obj.geometry) obj.geometry.dispose();
@@ -1747,14 +1752,14 @@ function spawnWildlife(type, camX, camZ) {
       group.add(qMesh);
       members.push({ mesh: qMesh, baseY: 0, plume: qMesh.getObjectByName('plume') });
     }
-    group.position.set(startX, -1.8, startZ);
+    group.position.set(startX, -1.2, startZ);
     scene.add(group);
     md.wildlife.push({ type, group, vx, age: 0, maxAge: 18, baseOpacity: 0.82, members });
 
   } else if (type === 'gila') {
     const group = new THREE.Group();
     const result = buildGila(group);
-    group.position.set(startX, -1.82, startZ);
+    group.position.set(startX, -1.2, startZ);
     group.scale.setScalar(0.65 + Math.random() * 0.1);
     group.rotation.y = side > 0 ? Math.PI : 0;
     scene.add(group);
