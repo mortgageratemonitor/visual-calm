@@ -43,7 +43,13 @@ You drift slowly over a moonlit desert landscape. A full moon with a soft glow h
 Mouse tilts your view across the landscape.
 
 ### Thunderstorm
-You drift slowly over a dark landscape as a massive storm rolls overhead. Dense storm clouds drift across the sky, illuminated from within when lightning strikes. Lightning bolts generate as jagged multi-segment lines that flicker rapidly before fading — each strike triggers a full-scene flash that slowly decays. Rain streams down at an angle in the wind. Wind-blown debris particles blow horizontally through the scene. Mouse tilts your view across the stormy landscape.
+You drift slowly over a dark landscape as a massive storm rolls overhead. Three depth layers of volumetric clouds — far (wide, diffuse), mid, and near (darker, sharper) — drift at different speeds creating genuine parallax depth. Each cloud is built from three overlapping planes for added volume.
+
+Lightning bolts are jagged 14-segment strikes with a secondary branch splitting off the midpoint. Each strike triggers a strong flash that illuminates the clouds from within, with a secondary flicker 80ms later. Distant horizon lightning flares inside the far clouds every few seconds — no bolt visible, just the storm lit from deep within. Ground puddle reflections shimmer at ground level and briefly brighten with each flash. Rain streams down at a wind angle, with squalls that surge intensity every 7–12 seconds before easing back. Wind-blown debris particles cross the scene horizontally.
+
+A **Storm** toggle sits in the bottom-left corner. When enabled, lightning strikes every 2–6 seconds. Toggle it off for infrequent lightning every 12–18 seconds — a calmer, distant storm feel. Switching immediately resets all lightning timers to the new interval.
+
+Mouse tilts your view across the landscape.
 
 ---
 
@@ -53,9 +59,10 @@ You drift slowly over a dark landscape as a massive storm rolls overhead. Dense 
 |-------|--------|
 | **Mode buttons** | Bottom center pill — switches between the six scenes |
 | **Pulse toggle** | Bottom right — Warp mode only, enables/disables speed surges |
+| **Storm toggle** | Bottom left — Thunderstorm mode only, switches between heavy and calm lightning |
 | **Mouse move** | Subtly influences every scene |
 
-UI auto-hides after 3.5 seconds of inactivity and reappears on any mouse movement.
+UI and toggles auto-hide after 3.5 seconds of inactivity and reappear on any mouse movement.
 
 ---
 
