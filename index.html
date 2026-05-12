@@ -92,7 +92,8 @@
   <span class="pip"></span>pulse
 </button>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js">
+</script>
 <script>
 // ============================================================
 // COSMIC CALM — v2
@@ -1277,8 +1278,8 @@ function updateSacred(t) {
 function initDesert() {
   camera.position.set(0, 3, 0);
   camera.rotation.set(0, 0, 0);
-  scene.fog = new THREE.FogExp2(0x02020e, 0.008);
-  renderer.setClearColor(0x02020e, 1);
+  scene.fog = new THREE.FogExp2(0x060818, 0.007);
+  renderer.setClearColor(0x060818, 1);
 
   // Background sphere
   scene.add(new THREE.Mesh(
@@ -1334,7 +1335,7 @@ function initDesert() {
   const moonlightGeo = new THREE.PlaneGeometry(600, 600);
   moonlightGeo.rotateX(-Math.PI / 2);
   const moonlightMat = new THREE.MeshBasicMaterial({
-    color: 0x1a2a5a, transparent: true, opacity: 0.28,
+    color: 0x1a2a5a, transparent: true, opacity: 0.38,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const moonlight = new THREE.Mesh(moonlightGeo, moonlightMat);
@@ -1355,7 +1356,7 @@ function initDesert() {
   // Ground — slightly blue-tinted
   const groundGeo = new THREE.PlaneGeometry(600, 600);
   groundGeo.rotateX(-Math.PI / 2);
-  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x0c0e1c })));
+  scene.add(new THREE.Mesh(groundGeo, new THREE.MeshBasicMaterial({ color: 0x141828 })));
 
   // Moon shimmer on sand
   const shimmerGeo = new THREE.PlaneGeometry(400, 400);
@@ -1551,7 +1552,7 @@ function updateDesert(t) {
   md.shimmer.material.opacity = 0.04 + Math.sin(t * 0.25) * 0.015;
 
   // [1] Moonlight gently breathes
-  md.moonlight.material.opacity = 0.24 + Math.sin(t * 0.18) * 0.04;
+  md.moonlight.material.opacity = 0.32 + Math.sin(t * 0.18) * 0.05;
 
   // [3] Heat shimmer band ripples at horizon
   md.shimmerBand.position.z = camera.position.z - 95;
@@ -1645,7 +1646,7 @@ function updateDesert(t) {
   if (md.wildlifeTimer >= md.wildlifeInterval) {
     md.wildlifeTimer = 0;
     md.wildlifeInterval = 8 + Math.random() * 10;
-    const types = ['roadrunner', 'quail', 'gila'];
+    const types = ['roadrunner', 'quail', 'gila', 'coyote', 'javelina'];
     const pick  = types[Math.floor(Math.random() * types.length)];
     spawnWildlife(pick, camera.position.x, camera.position.z);
   }
@@ -1677,7 +1678,32 @@ function updateDesert(t) {
         if (m.plume) m.plume.rotation.z = Math.sin(w.age * 6 + mi * 1.1) * 0.18;
       });
 
-    } else if (w.type === 'gila') {
+    } else if (w.type === 'coyote') {
+      // Trot with occasional pause
+      if (!w.pausing) {
+        w.group.position.x += w.vx * 0.7;
+        w.group.position.z += speed * 0.5;
+        const trot = Math.sin(w.age * 8);
+        if (w.legFL) { w.legFL.rotation.x = trot * 0.5;  w.legBR.rotation.x = trot * 0.5; }
+        if (w.legFR) { w.legFR.rotation.x = -trot * 0.5; w.legBL.rotation.x = -trot * 0.5; }
+        if (w.tail)  w.tail.rotation.x = -0.3 + Math.sin(w.age * 4) * 0.12;
+        // Randomly pause
+        if (Math.random() < 0.002) { w.pausing = true; w.pauseAge = 0; }
+      } else {
+        w.pauseAge += 1/30;
+        if (w.pauseAge > 1.5) w.pausing = false;
+      }
+
+  } else if (w.type === 'javelina') {
+      // Slow group shuffle
+      w.group.position.x += w.vx * 0.25;
+      w.group.position.z += speed * 0.38;
+      w.members.forEach(function(m, mi) {
+        m.mesh.position.y = m.baseY + Math.abs(Math.sin(w.age * 4 + mi * 1.3)) * 0.04;
+        if (m.snout) m.snout.rotation.y = Math.sin(w.age * 2 + mi) * 0.08;
+      });
+
+  } else if (w.type === 'gila') {
       // Slow deliberate crawl
       w.group.position.x += w.vx * 0.12;
       w.group.position.z += speed * 0.3;
@@ -1725,7 +1751,7 @@ function spawnWildlife(type, camX, camZ) {
 
   if (type === 'roadrunner') {
     const group = buildRoadrunner();
-    group.position.set(startX, -1.8, startZ);
+    group.position.set(startX, 0.2, startZ);
     group.scale.setScalar(0.7 + Math.random() * 0.15);
     group.rotation.y = side > 0 ? Math.PI : 0;
     scene.add(group);
@@ -1752,14 +1778,44 @@ function spawnWildlife(type, camX, camZ) {
       group.add(qMesh);
       members.push({ mesh: qMesh, baseY: 0, plume: qMesh.getObjectByName('plume') });
     }
-    group.position.set(startX, -1.2, startZ);
+    group.position.set(startX, 0.2, startZ);
     scene.add(group);
     md.wildlife.push({ type, group, vx, age: 0, maxAge: 18, baseOpacity: 0.82, members });
+
+  } else if (type === 'coyote') {
+    const group = buildCoyote();
+    group.position.set(startX, 0.2, startZ);
+    group.scale.setScalar(0.55 + Math.random() * 0.1);
+    group.rotation.y = side > 0 ? Math.PI : 0;
+    scene.add(group);
+    const w = { type, group, vx, age: 0, maxAge: 20, baseOpacity: 0.95, pausing: false, pauseAge: 0 };
+    w.legFL = group.getObjectByName('legFL');
+    w.legFR = group.getObjectByName('legFR');
+    w.legBL = group.getObjectByName('legBL');
+    w.legBR = group.getObjectByName('legBR');
+    w.tail  = group.getObjectByName('tail');
+    md.wildlife.push(w);
+
+  } else if (type === 'javelina') {
+    const count   = 2 + Math.floor(Math.random() * 2);
+    const group   = new THREE.Group();
+    const members = [];
+    for (let jv = 0; jv < count; jv++) {
+      const jMesh = buildJavelina();
+      jMesh.position.set((Math.random() - 0.5) * 2.5, 0, (Math.random() - 0.5) * 1.2);
+      jMesh.scale.setScalar(0.48 + Math.random() * 0.08);
+      jMesh.rotation.y = side > 0 ? Math.PI : 0;
+      group.add(jMesh);
+      members.push({ mesh: jMesh, baseY: 0, snout: jMesh.getObjectByName('snout') });
+    }
+    group.position.set(startX, 0.2, startZ);
+    scene.add(group);
+    md.wildlife.push({ type, group, vx, age: 0, maxAge: 20, baseOpacity: 0.92, members });
 
   } else if (type === 'gila') {
     const group = new THREE.Group();
     const result = buildGila(group);
-    group.position.set(startX, -1.2, startZ);
+    group.position.set(startX, 0.1, startZ);
     group.scale.setScalar(0.65 + Math.random() * 0.1);
     group.rotation.y = side > 0 ? Math.PI : 0;
     scene.add(group);
@@ -1769,7 +1825,7 @@ function spawnWildlife(type, camX, camZ) {
 }
 
 function buildRoadrunner() {
-  const col = new THREE.MeshBasicMaterial({ color: 0x3a4466, transparent: true, opacity: 0.95, depthWrite: false });
+  const col = new THREE.MeshBasicMaterial({ color: 0x7788aa, transparent: true, opacity: 1.0, depthWrite: false });
   const g = new THREE.Group();
 
   // Body — elongated ellipsoid
@@ -1829,7 +1885,7 @@ function buildRoadrunner() {
 }
 
 function buildQuail() {
-  const col = new THREE.MeshBasicMaterial({ color: 0x2e3a55, transparent: true, opacity: 0.95, depthWrite: false });
+  const col = new THREE.MeshBasicMaterial({ color: 0x6677aa, transparent: true, opacity: 1.0, depthWrite: false });
   const g   = new THREE.Group();
 
   // Round body
@@ -1874,7 +1930,7 @@ function buildQuail() {
 }
 
 function buildGila(g) {
-  const col = new THREE.MeshBasicMaterial({ color: 0x283244, transparent: true, opacity: 0.95, depthWrite: false });
+  const col = new THREE.MeshBasicMaterial({ color: 0x556688, transparent: true, opacity: 1.0, depthWrite: false });
   const bodyMeshes = [];
   const legs = [];
   const SEG = 5;
@@ -2105,6 +2161,132 @@ pulseToggleEl.style.display = 'flex';
 createScene();
 initWarp();
 loop();
+
+function buildCoyote() {
+  const col = () => new THREE.MeshBasicMaterial({ color: 0x6677aa, transparent: true, opacity: 1.0, depthWrite: false });
+  const g = new THREE.Group();
+
+  // Body — lean and elongated
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), col());
+  body.scale.set(1.9, 0.75, 0.8);
+  body.position.set(0, 0.32, 0);
+  g.add(body);
+
+  // Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.25, 6), col());
+  neck.rotation.z = -0.5;
+  neck.position.set(0.38, 0.5, 0);
+  g.add(neck);
+
+  // Head — slightly pointed
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), col());
+  head.scale.set(1.2, 0.9, 0.85);
+  head.position.set(0.52, 0.62, 0);
+  g.add(head);
+
+  // Snout — long and tapered
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.07, 0.22, 5), col());
+  snout.rotation.z = Math.PI / 2;
+  snout.position.set(0.72, 0.60, 0);
+  g.add(snout);
+
+  // Ears — tall pointed
+  [[-0.06], [0.06]].forEach(function(pair) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.18, 4), col());
+    ear.position.set(0.46, 0.80, pair[0]);
+    ear.rotation.z = (pair[0] > 0 ? 0.15 : -0.15);
+    g.add(ear);
+  });
+
+  // Tail — long, drooping slightly
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 0.55, 5), col());
+  tail.rotation.z = Math.PI / 2 - 0.5;
+  tail.position.set(-0.65, 0.28, 0);
+  tail.name = 'tail';
+  g.add(tail);
+
+  // Tail tuft
+  const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), col());
+  tuft.position.set(-0.92, 0.08, 0);
+  g.add(tuft);
+
+  // Four legs
+  const legDefs = [
+    { name: 'legFL', x:  0.28, z: -0.1 },
+    { name: 'legFR', x:  0.28, z:  0.1 },
+    { name: 'legBL', x: -0.28, z: -0.1 },
+    { name: 'legBR', x: -0.28, z:  0.1 },
+  ];
+  legDefs.forEach(function(def) {
+    const leg = new THREE.Group();
+    leg.name = def.name;
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.035, 0.25, 5), col());
+    upper.position.y = -0.12;
+    leg.add(upper);
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.22, 5), col());
+    lower.position.y = -0.3;
+    leg.add(lower);
+    leg.position.set(def.x, 0.18, def.z);
+    g.add(leg);
+  });
+
+  return g;
+}
+
+function buildJavelina() {
+  const col = () => new THREE.MeshBasicMaterial({ color: 0x556688, transparent: true, opacity: 1.0, depthWrite: false });
+  const g = new THREE.Group();
+
+  // Stocky barrel body
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), col());
+  body.scale.set(1.6, 0.9, 1.0);
+  body.position.set(0, 0.3, 0);
+  g.add(body);
+
+  // Large wide head — javelinas have big heads relative to body
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), col());
+  head.scale.set(1.3, 0.85, 0.9);
+  head.position.set(0.46, 0.36, 0);
+  g.add(head);
+
+  // Wide flat snout — peccary-like disc
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.1, 7), col());
+  snout.rotation.z = Math.PI / 2;
+  snout.position.set(0.68, 0.34, 0);
+  snout.name = 'snout';
+  g.add(snout);
+
+  // Small ears
+  [[-0.08], [0.08]].forEach(function(pair) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), col());
+    ear.scale.set(0.6, 1.0, 0.5);
+    ear.position.set(0.38, 0.60, pair[0]);
+    g.add(ear);
+  });
+
+  // Bristly ridge along back — small bumps
+  for (let b = 0; b < 4; b++) {
+    const bristle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 5, 4), col());
+    bristle.scale.set(0.5, 1.4, 0.5);
+    bristle.position.set((b - 1.5) * 0.18, 0.58, 0);
+    g.add(bristle);
+  }
+
+  // Short stubby tail
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.055, 5, 4), col());
+  tail.position.set(-0.52, 0.38, 0);
+  g.add(tail);
+
+  // Four short stocky legs
+  [[ 0.22, -0.1], [ 0.22, 0.1], [-0.22, -0.1], [-0.22, 0.1]].forEach(function(pair) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.22, 5), col());
+    leg.position.set(pair[0], 0.08, pair[1]);
+    g.add(leg);
+  });
+
+  return g;
+}
+
 </script>
 </body>
 </html>
